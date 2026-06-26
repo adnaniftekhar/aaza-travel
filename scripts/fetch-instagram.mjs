@@ -7,6 +7,41 @@ const OUT_FILE = path.join(__dirname, "../js/feed.json");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
 
+function isVideoItem(item) {
+  const type = (item.media_type || "").toUpperCase();
+  const url = item.media_url || "";
+  return type === "VIDEO" || type === "REELS" || type === "REEL" || url.includes(".mp4");
+}
+
+async function fetchThumbnail(mediaId, token) {
+  const fields = "thumbnail_url,media_url,media_type";
+  const res = await fetch(
+    `https://graph.instagram.com/${mediaId}?fields=${fields}&access_token=${token}`,
+  );
+  if (!res.ok) return "";
+  const data = await res.json();
+  return data.thumbnail_url || "";
+}
+
+async function mediaImage(item, token) {
+  if (!isVideoItem(item)) {
+    return {
+      image: item.media_url || item.thumbnail_url || "",
+      mediaType: item.media_type || "IMAGE",
+    };
+  }
+
+  let thumb = item.thumbnail_url || "";
+  if (!thumb) {
+    thumb = await fetchThumbnail(item.id, token);
+  }
+
+  return {
+    image: thumb || "",
+    mediaType: item.media_type || "VIDEO",
+  };
+}
+
 const ACCOUNTS = [
   {
     name: "Adnan",
@@ -42,17 +77,14 @@ async function fetchMediaForAccount(account) {
     for (const item of data.data || []) {
       if (!AAZA_HASHTAG.test(item.caption || "")) continue;
 
-      const isVideo =
-        item.media_type === "VIDEO" || item.media_type === "REELS";
+      const { image, mediaType } = await mediaImage(item, account.token);
 
       posts.push({
         id: item.id,
         author: account.name,
         caption: item.caption || "",
-        image: isVideo
-          ? item.thumbnail_url || item.media_url || ""
-          : item.media_url || item.thumbnail_url || "",
-        mediaType: item.media_type || "IMAGE",
+        image,
+        mediaType,
         permalink: item.permalink || "",
         date: item.timestamp || "",
       });
