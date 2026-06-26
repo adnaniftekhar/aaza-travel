@@ -4,8 +4,25 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_FILE = path.join(__dirname, "../js/feed.json");
+const FEED_PHOTOS = path.join(__dirname, "../photos/feed");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
+
+async function cacheImage(url, id) {
+  if (!url || url.includes(".mp4")) return "";
+
+  fs.mkdirSync(FEED_PHOTOS, { recursive: true });
+  const filePath = path.join(FEED_PHOTOS, `${id}.jpg`);
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return url;
+    fs.writeFileSync(filePath, Buffer.from(await res.arrayBuffer()));
+    return `photos/feed/${id}.jpg`;
+  } catch {
+    return url;
+  }
+}
 
 function isVideoItem(item) {
   const type = (item.media_type || "").toUpperCase();
@@ -78,12 +95,13 @@ async function fetchMediaForAccount(account) {
       if (!AAZA_HASHTAG.test(item.caption || "")) continue;
 
       const { image, mediaType } = await mediaImage(item, account.token);
+      const localImage = await cacheImage(image, item.id);
 
       posts.push({
         id: item.id,
         author: account.name,
         caption: item.caption || "",
-        image,
+        image: localImage || image,
         mediaType,
         permalink: item.permalink || "",
         date: item.timestamp || "",

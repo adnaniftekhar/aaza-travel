@@ -119,7 +119,7 @@ function renderFeed(containerId, items) {
 
 async function loadInstagramFeed(containerId) {
   try {
-    const res = await fetch("js/feed.json");
+    const res = await fetch(`js/feed.json?v=${Date.now()}`);
     if (!res.ok) throw new Error("Feed not found");
     const posts = await res.json();
     renderFeed(containerId, posts);
