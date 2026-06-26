@@ -49,6 +49,34 @@ function renderWhereBanner(containerId) {
   el.innerHTML = `We are in <strong>${escapeHtml(current.city)}, ${escapeHtml(current.country)}</strong> right now.`;
 }
 
+function feedImageUrl(item) {
+  const url = item.image || item.media_url || "";
+  const isVideo =
+    item.mediaType === "VIDEO" ||
+    item.mediaType === "REELS" ||
+    url.includes(".mp4");
+  if (isVideo && url.includes(".mp4")) return "";
+  return url;
+}
+
+function feedCardMedia(item, caption) {
+  const img = feedImageUrl(item);
+  const isVideo =
+    item.mediaType === "VIDEO" ||
+    item.mediaType === "REELS" ||
+    (item.image || "").includes(".mp4");
+
+  if (img) {
+    return `<img src="${escapeHtml(img)}" alt="${escapeHtml(caption)}" loading="lazy">`;
+  }
+
+  if (isVideo) {
+    return `<div class="feed-video-placeholder" aria-label="Video post"><span class="play-btn">▶</span><span class="play-label">Video</span></div>`;
+  }
+
+  return `<div class="feed-video-placeholder" aria-label="Post"><span class="play-label">View post</span></div>`;
+}
+
 function renderFeed(containerId, items) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -72,14 +100,13 @@ function renderFeed(containerId, items) {
   el.innerHTML = items
     .map((item) => {
       const href = item.permalink || "#";
-      const img = item.image || item.media_url || "";
       const caption = item.caption || "";
       const author = item.author || "";
       const date = item.date || item.timestamp || "";
 
       return `
     <a class="feed-card" href="${escapeHtml(href)}" target="_blank" rel="noopener">
-      <img src="${escapeHtml(img)}" alt="${escapeHtml(caption)}" loading="lazy">
+      ${feedCardMedia(item, caption)}
       <div class="feed-card-body">
         <p class="meta">${escapeHtml(author)} · ${formatDate(date)}</p>
         <p class="caption">${escapeHtml(caption)}</p>

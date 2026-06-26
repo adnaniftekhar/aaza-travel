@@ -278,6 +278,35 @@ section {
   margin-top: 0.5rem;
 }
 
+.feed-video-placeholder {
+  align-items: center;
+  aspect-ratio: 1;
+  background: linear-gradient(135deg, #3d3020 0%, #8b5a2b 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.feed-video-placeholder .play-btn {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  font-size: 1.25rem;
+  height: 3.5rem;
+  justify-content: center;
+  padding-left: 0.2rem;
+  width: 3.5rem;
+}
+
+.feed-video-placeholder .play-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
 .feed-empty {
   background: var(--card);
   border: 1px dashed var(--border);

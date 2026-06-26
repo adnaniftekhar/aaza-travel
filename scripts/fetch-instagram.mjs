@@ -42,11 +42,17 @@ async function fetchMediaForAccount(account) {
     for (const item of data.data || []) {
       if (!AAZA_HASHTAG.test(item.caption || "")) continue;
 
+      const isVideo =
+        item.media_type === "VIDEO" || item.media_type === "REELS";
+
       posts.push({
         id: item.id,
         author: account.name,
         caption: item.caption || "",
-        image: item.media_url || item.thumbnail_url || "",
+        image: isVideo
+          ? item.thumbnail_url || item.media_url || ""
+          : item.media_url || item.thumbnail_url || "",
+        mediaType: item.media_type || "IMAGE",
         permalink: item.permalink || "",
         date: item.timestamp || "",
       });
