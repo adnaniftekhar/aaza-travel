@@ -18,7 +18,7 @@ const INSTAGRAM = {
 };
 
 // Posts must include one of these hashtags to appear on the site.
-const HASHTAGS = ["#AAZATravels", "#AAZAParis", "#AAZAScotland"];
+const HASHTAGS = ["#AAZATravels", "#AAZAadventures", "#AAZAParis", "#AAZAScotland"];
 
 const VLOGS = [
   {
