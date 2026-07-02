@@ -128,6 +128,49 @@ async function loadInstagramFeed(containerId) {
   }
 }
 
+function renderBlog(containerId, posts) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!posts || posts.length === 0) {
+    el.innerHTML = `
+      <div class="feed-empty">
+        <p>No blog posts yet.</p>
+        <p class="muted">New posts from our journal will appear here automatically.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = posts
+    .map((post) => {
+      const image = post.image
+        ? `<img src="${escapeHtml(post.image)}" alt="${escapeHtml(post.title)}" loading="lazy">`
+        : "";
+      return `
+    <article class="blog-card">
+      ${image}
+      <div class="blog-card-body">
+        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.date)}</p>
+        <h2>${escapeHtml(post.title)}</h2>
+        <p class="blog-excerpt">${escapeHtml(post.excerpt)}</p>
+        <a class="view-ig" href="${escapeHtml(post.link)}" target="_blank" rel="noopener">Read full post →</a>
+      </div>
+    </article>`;
+    })
+    .join("");
+}
+
+async function loadBlog(containerId) {
+  try {
+    const res = await fetch(`js/blog.json?v=${Date.now()}`);
+    if (!res.ok) throw new Error("Blog not found");
+    const posts = await res.json();
+    renderBlog(containerId, posts);
+  } catch {
+    renderBlog(containerId, []);
+  }
+}
+
 function youtubeWatchUrl(videoId) {
   return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }

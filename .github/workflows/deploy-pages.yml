@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Update Instagram Feed"]
+    workflows: ["Update Instagram Feed", "Update Blog"]
     types: [completed]
   workflow_dispatch:
 

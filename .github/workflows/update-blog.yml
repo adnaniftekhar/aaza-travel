@@ -1,0 +1,34 @@
+name: Update Blog
+
+on:
+  schedule:
+    - cron: "30 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-blog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Blogger posts
+        env:
+          BLOGGER_URL: ${{ vars.BLOGGER_URL }}
+        run: node scripts/fetch-blog.mjs
+
+      - name: Commit blog if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add js/blog.json
+          if git diff --staged --quiet; then
+            echo "No changes to blog.json"
+          else
+            git commit -m "Update blog posts"
+            git pull --rebase origin main
+            git push
+          fi

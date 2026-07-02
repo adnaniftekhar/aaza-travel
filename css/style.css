@@ -477,3 +477,40 @@ footer {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* Blog */
+
+.blog-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.blog-card img {
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.blog-card-body {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.blog-card-body .meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+}
+
+.blog-card-body h2 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.blog-excerpt {
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
