@@ -141,28 +141,35 @@ async function buildPostFromNode(node, profileAccount) {
     date: node.taken_at_timestamp
       ? new Date(node.taken_at_timestamp * 1000).toISOString()
       : "",
+    // A collab post is owned by someone other than the profile we're reading.
+    collab: !!ownerUsername && ownerUsername !== profileAccount.username,
   };
 }
 
+// Optional: an Instagram session cookie lets the public read succeed from
+// datacenter IPs (like GitHub Actions), which otherwise get rate-limited (429).
+const IG_SESSIONID = process.env.IG_SESSIONID || "";
+
 // Read a public profile's grid via Instagram's web endpoint. Returns own posts
-// AND collab posts. No login/token required, but only works for PUBLIC profiles.
+// AND collab posts. Returns { posts, ok } so callers know if the read succeeded.
 async function fetchPublicProfilePosts(account) {
   const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${account.username}`;
+  const headers = {
+    "X-IG-App-ID": "936619743392459",
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    Referer: `https://www.instagram.com/${account.username}/`,
+  };
+  if (IG_SESSIONID) headers.Cookie = `sessionid=${IG_SESSIONID}`;
+
   let data;
   try {
-    const res = await fetch(url, {
-      headers: {
-        "X-IG-App-ID": "936619743392459",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        Referer: `https://www.instagram.com/${account.username}/`,
-      },
-    });
+    const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch (err) {
     console.log(`${account.name}: public profile read failed (${err.message})`);
-    return [];
+    return { posts: [], ok: false };
   }
 
   const edges = data?.data?.user?.edge_owner_to_timeline_media?.edges || [];
@@ -171,7 +178,17 @@ async function fetchPublicProfilePosts(account) {
     const post = await buildPostFromNode(edge.node || {}, account);
     if (post) posts.push(post);
   }
-  return posts;
+  return { posts, ok: true };
+}
+
+function loadExistingFeed() {
+  try {
+    const raw = fs.readFileSync(OUT_FILE, "utf8").trim();
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
 }
 
 // Walk a paginated Graph edge (e.g. /media or /collaborative_media) and collect posts.
@@ -222,18 +239,37 @@ async function main() {
     all.push(post);
   };
 
+  let anyScrapeOk = false;
+
   for (const account of ACCOUNTS) {
     // 1. Primary: public profile grid (includes the account's own posts AND any
-    //    collab posts). Works without a token, but only for public profiles.
+    //    collab posts). Works without a token, but Instagram blocks datacenter
+    //    IPs (429) unless an IG_SESSIONID cookie is provided.
     const scraped = await fetchPublicProfilePosts(account);
-    console.log(`${account.name}: ${scraped.length} posts from public profile`);
-    for (const post of scraped) add(post);
+    if (scraped.ok) anyScrapeOk = true;
+    console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
+    for (const post of scraped.posts) add(post);
 
     // 2. Fallback/supplement: official Graph API (own posts only). Catches posts
     //    if the public read is blocked or the profile is private.
     const api = await fetchMediaForAccount(account);
     if (api.length) console.log(`${account.name}: ${api.length} posts from Graph API`);
     for (const post of api) add(post);
+  }
+
+  // If NO scrape succeeded this run (e.g. GitHub blocked with 429), we can't see
+  // collab posts. Carry over the collab posts we captured on a previous run so a
+  // blocked run never erases them. A later successful scrape re-syncs/prunes them.
+  if (!anyScrapeOk) {
+    let carried = 0;
+    for (const post of loadExistingFeed()) {
+      if (post && post.collab && !seen.has(post.id)) {
+        seen.add(post.id);
+        all.push(post);
+        carried++;
+      }
+    }
+    if (carried) console.log(`Carried over ${carried} collab posts from previous feed`);
   }
 
   all.sort((a, b) => new Date(b.date) - new Date(a.date));
