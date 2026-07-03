@@ -154,7 +154,25 @@ async function buildPostFromNode(node, profileAccount) {
 
 // Optional: an Instagram session cookie lets the public read succeed from
 // datacenter IPs (like GitHub Actions), which otherwise get rate-limited (429).
-const IG_SESSIONID = process.env.IG_SESSIONID || "";
+function parseSessionId(raw) {
+  if (!raw) return { sessionid: "", dsUserId: "" };
+  let sessionid = raw.trim();
+  try {
+    sessionid = decodeURIComponent(sessionid);
+  } catch {
+    /* keep raw value */
+  }
+  const dsUserId = sessionid.split(":")[0] || "";
+  return { sessionid, dsUserId };
+}
+
+const { sessionid: IG_SESSIONID, dsUserId: IG_DS_USER_ID } = parseSessionId(
+  process.env.IG_SESSIONID || "",
+);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Read a public profile's grid via Instagram's web endpoint. Returns own posts
 // AND collab posts. Returns { posts, ok } so callers know if the read succeeded.
@@ -166,16 +184,30 @@ async function fetchPublicProfilePosts(account) {
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     Referer: `https://www.instagram.com/${account.username}/`,
   };
-  if (IG_SESSIONID) headers.Cookie = `sessionid=${IG_SESSIONID}`;
+  if (IG_SESSIONID) {
+    const parts = [`sessionid=${IG_SESSIONID}`];
+    if (IG_DS_USER_ID) parts.push(`ds_user_id=${IG_DS_USER_ID}`);
+    headers.Cookie = parts.join("; ");
+  }
 
   let data;
-  try {
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = await res.json();
-  } catch (err) {
-    console.log(`${account.name}: public profile read failed (${err.message})`);
-    return { posts: [], ok: false };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, { headers });
+      if (res.status === 429 && attempt < 3) {
+        await sleep(attempt * 5000);
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+      break;
+    } catch (err) {
+      if (attempt === 3) {
+        console.log(`${account.name}: public profile read failed (${err.message})`);
+        return { posts: [], ok: false };
+      }
+      await sleep(attempt * 5000);
+    }
   }
 
   const edges = data?.data?.user?.edge_owner_to_timeline_media?.edges || [];
@@ -255,6 +287,8 @@ async function main() {
     if (scraped.ok) anyScrapeOk = true;
     console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
     for (const post of scraped.posts) add(post);
+
+    await sleep(3000);
 
     // 2. Fallback/supplement: official Graph API (own posts only). Catches posts
     //    if the public read is blocked or the profile is private.
