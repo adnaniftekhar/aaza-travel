@@ -128,21 +128,57 @@ async function loadJsonArray(path) {
   }
 }
 
+// Load Instagram's embed script once, then (re)process any embed blockquotes.
+function processInstagramEmbeds() {
+  if (window.instgrm && window.instgrm.Embeds) {
+    window.instgrm.Embeds.process();
+    return;
+  }
+  if (document.getElementById("ig-embed-js")) return;
+  const s = document.createElement("script");
+  s.id = "ig-embed-js";
+  s.async = true;
+  s.src = "https://www.instagram.com/embed.js";
+  document.body.appendChild(s);
+}
+
+// Public posts we can't reach through the API (e.g. collab posts) are shown as
+// official Instagram embeds, listed by URL in js/manual-posts.json.
+function renderManualEmbeds(items) {
+  return (items || [])
+    .map((item) => {
+      const url = typeof item === "string" ? item : item && item.permalink;
+      if (!url) return "";
+      return `<blockquote class="instagram-media feed-embed"
+        data-instgrm-permalink="${escapeHtml(url)}"
+        data-instgrm-version="14"></blockquote>`;
+    })
+    .join("");
+}
+
 async function loadInstagramFeed(containerId) {
   const [auto, manual] = await Promise.all([
     loadJsonArray("js/feed.json"),
     loadJsonArray("js/manual-posts.json"),
   ]);
 
-  const byId = new Map();
-  for (const post of [...manual, ...auto]) {
-    if (post && post.id && !byId.has(post.id)) byId.set(post.id, post);
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const hasContent = (auto && auto.length) || (manual && manual.length);
+  if (!hasContent) {
+    renderFeed(containerId, []);
+    return;
   }
 
-  const posts = [...byId.values()].sort(
-    (a, b) => new Date(b.date || 0) - new Date(a.date || 0),
-  );
-  renderFeed(containerId, posts);
+  let cardsHtml = "";
+  if (auto && auto.length) {
+    renderFeed(containerId, auto);
+    cardsHtml = el.innerHTML;
+  }
+  el.innerHTML = renderManualEmbeds(manual) + cardsHtml;
+
+  if (manual && manual.length) processInstagramEmbeds();
 }
 
 function renderBlog(containerId, posts) {

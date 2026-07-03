@@ -307,6 +307,14 @@ section {
   font-weight: 500;
 }
 
+.feed-embed {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin: 0 auto !important;
+  max-width: 540px;
+  width: 100% !important;
+}
+
 .feed-empty {
   background: var(--card);
   border: 1px dashed var(--border);
