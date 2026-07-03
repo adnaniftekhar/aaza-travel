@@ -14,6 +14,12 @@ const EXCLUDED_IDS = new Set([
   "18007137643920371", // test: Mongolia reel
 ]);
 
+// Shortcodes to ALWAYS include, even without an #AAZA hashtag. Use this to
+// hand-pick a post (e.g. a collab post the author forgot to hashtag).
+const INCLUDED_SHORTCODES = new Set([
+  "DaVV6v2iN_8tUH4Xjf6vpwYHxpg_uu1rkXr5Ks0", // Amy: "First stop in Paris, a corner bakery..."
+]);
+
 async function cacheImage(url, id) {
   if (!url || url.includes(".mp4")) return "";
 
@@ -99,10 +105,10 @@ const MEDIA_FIELDS = "id,caption,media_url,permalink,timestamp,media_type,thumbn
 // Turn one raw Graph API media item into a feed post (or null if it should be skipped).
 async function buildPost(item, account) {
   if (EXCLUDED_IDS.has(item.id)) return null;
-  if (!AAZA_HASHTAG.test(item.caption || "")) return null;
 
   const shortcode = extractShortcode(item.permalink);
   const id = shortcode || item.id;
+  if (!AAZA_HASHTAG.test(item.caption || "") && !INCLUDED_SHORTCODES.has(shortcode)) return null;
   const { image, mediaType } = await mediaImage(item, account.token);
   const localImage = await cacheImage(image, id);
 
@@ -125,7 +131,7 @@ async function buildPostFromNode(node, profileAccount) {
   if (EXCLUDED_IDS.has(shortcode) || EXCLUDED_IDS.has(node.id)) return null;
 
   const caption = node.edge_media_to_caption?.edges?.[0]?.node?.text || "";
-  if (!AAZA_HASHTAG.test(caption)) return null;
+  if (!AAZA_HASHTAG.test(caption) && !INCLUDED_SHORTCODES.has(shortcode)) return null;
 
   const image = node.display_url || "";
   const localImage = await cacheImage(image, shortcode);
