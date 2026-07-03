@@ -68,28 +68,46 @@ async function mediaImage(item, token) {
 const ACCOUNTS = [
   {
     name: "Adnan",
+    username: "adnanyoga",
     userId: process.env.INSTAGRAM_USER_ID_ADNAN,
     token: process.env.INSTAGRAM_ACCESS_TOKEN_ADNAN || process.env.INSTAGRAM_ACCESS_TOKEN,
   },
   {
     name: "Amy",
+    username: "mackling",
     userId: process.env.INSTAGRAM_USER_ID_AMY,
     token: process.env.INSTAGRAM_ACCESS_TOKEN_AMY || process.env.INSTAGRAM_ACCESS_TOKEN,
   },
 ];
 
+// Map an Instagram @handle to a friendly author name (used for collab posts,
+// where the owner may be someone other than the profile we're reading).
+function authorFromUsername(username, fallback) {
+  const match = ACCOUNTS.find((a) => a.username === username);
+  return (match && match.name) || fallback || username || "";
+}
+
+// Pull the shortcode out of an Instagram permalink, e.g.
+// https://www.instagram.com/p/ABC123/  ->  ABC123
+function extractShortcode(permalink) {
+  const m = /\/(?:p|reel|tv)\/([^/?#]+)/.exec(permalink || "");
+  return m ? m[1] : "";
+}
+
 const MEDIA_FIELDS = "id,caption,media_url,permalink,timestamp,media_type,thumbnail_url";
 
-// Turn one raw Instagram media item into a feed post (or null if it should be skipped).
+// Turn one raw Graph API media item into a feed post (or null if it should be skipped).
 async function buildPost(item, account) {
   if (EXCLUDED_IDS.has(item.id)) return null;
   if (!AAZA_HASHTAG.test(item.caption || "")) return null;
 
+  const shortcode = extractShortcode(item.permalink);
+  const id = shortcode || item.id;
   const { image, mediaType } = await mediaImage(item, account.token);
-  const localImage = await cacheImage(image, item.id);
+  const localImage = await cacheImage(image, id);
 
   return {
-    id: item.id,
+    id,
     author: account.name,
     caption: item.caption || "",
     image: localImage || image,
@@ -97,6 +115,63 @@ async function buildPost(item, account) {
     permalink: item.permalink || "",
     date: item.timestamp || "",
   };
+}
+
+// Turn one node from the public web_profile_info feed into a feed post. This is
+// how we pick up COLLAB posts, which the official Graph API deliberately hides.
+async function buildPostFromNode(node, profileAccount) {
+  const shortcode = node.shortcode;
+  if (!shortcode) return null;
+  if (EXCLUDED_IDS.has(shortcode) || EXCLUDED_IDS.has(node.id)) return null;
+
+  const caption = node.edge_media_to_caption?.edges?.[0]?.node?.text || "";
+  if (!AAZA_HASHTAG.test(caption)) return null;
+
+  const image = node.display_url || "";
+  const localImage = await cacheImage(image, shortcode);
+  const ownerUsername = node.owner?.username;
+
+  return {
+    id: shortcode,
+    author: authorFromUsername(ownerUsername, profileAccount.name),
+    caption,
+    image: localImage || image,
+    mediaType: node.is_video ? "VIDEO" : "IMAGE",
+    permalink: `https://www.instagram.com/p/${shortcode}/`,
+    date: node.taken_at_timestamp
+      ? new Date(node.taken_at_timestamp * 1000).toISOString()
+      : "",
+  };
+}
+
+// Read a public profile's grid via Instagram's web endpoint. Returns own posts
+// AND collab posts. No login/token required, but only works for PUBLIC profiles.
+async function fetchPublicProfilePosts(account) {
+  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${account.username}`;
+  let data;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "X-IG-App-ID": "936619743392459",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        Referer: `https://www.instagram.com/${account.username}/`,
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (err) {
+    console.log(`${account.name}: public profile read failed (${err.message})`);
+    return [];
+  }
+
+  const edges = data?.data?.user?.edge_owner_to_timeline_media?.edges || [];
+  const posts = [];
+  for (const edge of edges) {
+    const post = await buildPostFromNode(edge.node || {}, account);
+    if (post) posts.push(post);
+  }
+  return posts;
 }
 
 // Walk a paginated Graph edge (e.g. /media or /collaborative_media) and collect posts.
@@ -141,14 +216,24 @@ async function main() {
   const all = [];
   const seen = new Set();
 
+  const add = (post) => {
+    if (!post || !post.id || seen.has(post.id)) return;
+    seen.add(post.id);
+    all.push(post);
+  };
+
   for (const account of ACCOUNTS) {
-    const posts = await fetchMediaForAccount(account);
-    console.log(`${account.name}: ${posts.length} posts with #AAZA hashtags`);
-    for (const post of posts) {
-      if (seen.has(post.id)) continue; // same post reachable from both accounts
-      seen.add(post.id);
-      all.push(post);
-    }
+    // 1. Primary: public profile grid (includes the account's own posts AND any
+    //    collab posts). Works without a token, but only for public profiles.
+    const scraped = await fetchPublicProfilePosts(account);
+    console.log(`${account.name}: ${scraped.length} posts from public profile`);
+    for (const post of scraped) add(post);
+
+    // 2. Fallback/supplement: official Graph API (own posts only). Catches posts
+    //    if the public read is blocked or the profile is private.
+    const api = await fetchMediaForAccount(account);
+    if (api.length) console.log(`${account.name}: ${api.length} posts from Graph API`);
+    for (const post of api) add(post);
   }
 
   all.sort((a, b) => new Date(b.date) - new Date(a.date));
