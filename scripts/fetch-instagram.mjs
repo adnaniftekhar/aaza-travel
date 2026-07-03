@@ -123,25 +123,15 @@ async function fetchMediaForAccount(account) {
     return [];
   }
 
+  // The /media edge only returns posts this account AUTHORED. Instagram's simple
+  // "Instagram Login" API cannot fetch posts the account only collaborated on, so
+  // a collab post only appears here if THIS account is the original author.
   const posts = [];
-
-  // 1. Posts this account authored itself.
   const ownUrl = `https://graph.instagram.com/${account.userId}/media?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
   try {
     await collectFromEdge(ownUrl, account, posts);
   } catch (err) {
-    throw new Error(`Instagram API error for ${account.name} (media): ${err.message}`);
-  }
-
-  // 2. Posts where this account is an accepted collaborator (owned by someone else).
-  //    Non-fatal: if the endpoint/permission isn't available, keep the own posts.
-  const collabUrl = `https://graph.instagram.com/${account.userId}/collaborative_media?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
-  try {
-    const before = posts.length;
-    await collectFromEdge(collabUrl, account, posts);
-    console.log(`${account.name}: ${posts.length - before} collaborative posts matched`);
-  } catch (err) {
-    console.log(`${account.name}: collaborative_media unavailable (${err.message})`);
+    throw new Error(`Instagram API error for ${account.name}: ${err.message}`);
   }
 
   return posts;
