@@ -22,6 +22,7 @@ jobs:
           INSTAGRAM_ACCESS_TOKEN_AMY: ${{ secrets.INSTAGRAM_ACCESS_TOKEN_AMY }}
           INSTAGRAM_USER_ID_ADNAN: ${{ secrets.INSTAGRAM_USER_ID_ADNAN }}
           INSTAGRAM_USER_ID_AMY: ${{ secrets.INSTAGRAM_USER_ID_AMY }}
+          IG_SESSIONID: ${{ secrets.IG_SESSIONID }}
         run: node scripts/fetch-instagram.mjs
 
       - name: Commit feed if changed
