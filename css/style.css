@@ -95,7 +95,7 @@ nav a.active {
   align-items: flex-end;
   background:
     linear-gradient(var(--hero-overlay), var(--hero-overlay)),
-    url("../photos/hero.jpg") center / cover no-repeat,
+    url("../photos/hero.jpg") center 80% / cover no-repeat,
     linear-gradient(135deg, #c4a574 0%, #8b5a2b 100%);
   color: white;
   display: flex;
