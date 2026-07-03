@@ -78,44 +78,70 @@ const ACCOUNTS = [
   },
 ];
 
+const MEDIA_FIELDS = "id,caption,media_url,permalink,timestamp,media_type,thumbnail_url";
+
+// Turn one raw Instagram media item into a feed post (or null if it should be skipped).
+async function buildPost(item, account) {
+  if (EXCLUDED_IDS.has(item.id)) return null;
+  if (!AAZA_HASHTAG.test(item.caption || "")) return null;
+
+  const { image, mediaType } = await mediaImage(item, account.token);
+  const localImage = await cacheImage(image, item.id);
+
+  return {
+    id: item.id,
+    author: account.name,
+    caption: item.caption || "",
+    image: localImage || image,
+    mediaType,
+    permalink: item.permalink || "",
+    date: item.timestamp || "",
+  };
+}
+
+// Walk a paginated Graph edge (e.g. /media or /collaborative_media) and collect posts.
+async function collectFromEdge(startUrl, account, posts) {
+  let url = startUrl;
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err);
+    }
+    const data = await res.json();
+    for (const item of data.data || []) {
+      const post = await buildPost(item, account);
+      if (post) posts.push(post);
+    }
+    url = data.paging?.next || null;
+  }
+}
+
 async function fetchMediaForAccount(account) {
   if (!account.userId || !account.token) {
     console.log(`Skipping ${account.name}: missing user ID or token`);
     return [];
   }
 
-  const fields = "id,caption,media_url,permalink,timestamp,media_type,thumbnail_url";
-  let url = `https://graph.instagram.com/${account.userId}/media?fields=${fields}&limit=50&access_token=${account.token}`;
   const posts = [];
 
-  while (url) {
-    const res = await fetch(url);
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Instagram API error for ${account.name}: ${err}`);
-    }
+  // 1. Posts this account authored itself.
+  const ownUrl = `https://graph.instagram.com/${account.userId}/media?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
+  try {
+    await collectFromEdge(ownUrl, account, posts);
+  } catch (err) {
+    throw new Error(`Instagram API error for ${account.name} (media): ${err.message}`);
+  }
 
-    const data = await res.json();
-
-    for (const item of data.data || []) {
-      if (EXCLUDED_IDS.has(item.id)) continue;
-      if (!AAZA_HASHTAG.test(item.caption || "")) continue;
-
-      const { image, mediaType } = await mediaImage(item, account.token);
-      const localImage = await cacheImage(image, item.id);
-
-      posts.push({
-        id: item.id,
-        author: account.name,
-        caption: item.caption || "",
-        image: localImage || image,
-        mediaType,
-        permalink: item.permalink || "",
-        date: item.timestamp || "",
-      });
-    }
-
-    url = data.paging?.next || null;
+  // 2. Posts where this account is an accepted collaborator (owned by someone else).
+  //    Non-fatal: if the endpoint/permission isn't available, keep the own posts.
+  const collabUrl = `https://graph.instagram.com/${account.userId}/collaborative_media?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
+  try {
+    const before = posts.length;
+    await collectFromEdge(collabUrl, account, posts);
+    console.log(`${account.name}: ${posts.length - before} collaborative posts matched`);
+  } catch (err) {
+    console.log(`${account.name}: collaborative_media unavailable (${err.message})`);
   }
 
   return posts;
@@ -123,11 +149,16 @@ async function fetchMediaForAccount(account) {
 
 async function main() {
   const all = [];
+  const seen = new Set();
 
   for (const account of ACCOUNTS) {
     const posts = await fetchMediaForAccount(account);
     console.log(`${account.name}: ${posts.length} posts with #AAZA hashtags`);
-    all.push(...posts);
+    for (const post of posts) {
+      if (seen.has(post.id)) continue; // same post reachable from both accounts
+      seen.add(post.id);
+      all.push(post);
+    }
   }
 
   all.sort((a, b) => new Date(b.date) - new Date(a.date));
