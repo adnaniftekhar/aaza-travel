@@ -117,15 +117,32 @@ function renderFeed(containerId, items) {
     .join("");
 }
 
-async function loadInstagramFeed(containerId) {
+async function loadJsonArray(path) {
   try {
-    const res = await fetch(`js/feed.json?v=${Date.now()}`);
-    if (!res.ok) throw new Error("Feed not found");
-    const posts = await res.json();
-    renderFeed(containerId, posts);
+    const res = await fetch(`${path}?v=${Date.now()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   } catch {
-    renderFeed(containerId, []);
+    return [];
   }
+}
+
+async function loadInstagramFeed(containerId) {
+  const [auto, manual] = await Promise.all([
+    loadJsonArray("js/feed.json"),
+    loadJsonArray("js/manual-posts.json"),
+  ]);
+
+  const byId = new Map();
+  for (const post of [...manual, ...auto]) {
+    if (post && post.id && !byId.has(post.id)) byId.set(post.id, post);
+  }
+
+  const posts = [...byId.values()].sort(
+    (a, b) => new Date(b.date || 0) - new Date(a.date || 0),
+  );
+  renderFeed(containerId, posts);
 }
 
 function renderBlog(containerId, posts) {

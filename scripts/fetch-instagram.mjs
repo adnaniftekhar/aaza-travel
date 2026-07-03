@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_FILE = path.join(__dirname, "../js/feed.json");
+const MANUAL_FILE = path.join(__dirname, "../js/manual-posts.json");
 const FEED_PHOTOS = path.join(__dirname, "../photos/feed");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
@@ -137,9 +138,31 @@ async function fetchMediaForAccount(account) {
   return posts;
 }
 
+// Hand-added posts (e.g. collab posts from a private account that the API can't
+// reach). These are kept in js/manual-posts.json and always merged in, so the
+// automatic sync never wipes them.
+function loadManualPosts() {
+  try {
+    const raw = fs.readFileSync(MANUAL_FILE, "utf8").trim();
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
 async function main() {
   const all = [];
   const seen = new Set();
+
+  const manual = loadManualPosts();
+  for (const post of manual) {
+    if (!post || !post.id || seen.has(post.id)) continue;
+    seen.add(post.id);
+    all.push(post);
+  }
+  console.log(`Manual posts: ${manual.length}`);
 
   for (const account of ACCOUNTS) {
     const posts = await fetchMediaForAccount(account);
