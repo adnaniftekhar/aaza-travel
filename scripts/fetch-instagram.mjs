@@ -8,6 +8,12 @@ const FEED_PHOTOS = path.join(__dirname, "../photos/feed");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
 
+// Post IDs to never show, even if they still match a hashtag (old test posts).
+const EXCLUDED_IDS = new Set([
+  "18087449387048294", // test: La Paz whale signs
+  "18007137643920371", // test: Mongolia reel
+]);
+
 async function cacheImage(url, id) {
   if (!url || url.includes(".mp4")) return "";
 
@@ -92,6 +98,7 @@ async function fetchMediaForAccount(account) {
     const data = await res.json();
 
     for (const item of data.data || []) {
+      if (EXCLUDED_IDS.has(item.id)) continue;
       if (!AAZA_HASHTAG.test(item.caption || "")) continue;
 
       const { image, mediaType } = await mediaImage(item, account.token);
