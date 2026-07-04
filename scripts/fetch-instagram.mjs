@@ -75,12 +75,14 @@ const ACCOUNTS = [
   {
     name: "Adnan",
     username: "adnanyoga",
+    scrapePublic: true, // public grid includes own posts + collab posts
     userId: process.env.INSTAGRAM_USER_ID_ADNAN,
     token: process.env.INSTAGRAM_ACCESS_TOKEN_ADNAN || process.env.INSTAGRAM_ACCESS_TOKEN,
   },
   {
     name: "Amy",
     username: "mackling",
+    scrapePublic: false, // private — collab posts appear on adnanyoga's grid
     userId: process.env.INSTAGRAM_USER_ID_AMY,
     token: process.env.INSTAGRAM_ACCESS_TOKEN_AMY || process.env.INSTAGRAM_ACCESS_TOKEN,
   },
@@ -280,26 +282,24 @@ async function main() {
   let anyScrapeOk = false;
 
   for (const account of ACCOUNTS) {
-    // 1. Primary: public profile grid (includes the account's own posts AND any
-    //    collab posts). Works without a token, but Instagram blocks datacenter
-    //    IPs (429) unless an IG_SESSIONID cookie is provided.
-    const scraped = await fetchPublicProfilePosts(account);
-    if (scraped.ok) anyScrapeOk = true;
-    console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
-    for (const post of scraped.posts) add(post);
+    // 1. Primary: public profile grid (own posts + collab posts on that profile).
+    if (account.scrapePublic) {
+      const scraped = await fetchPublicProfilePosts(account);
+      if (scraped.ok) anyScrapeOk = true;
+      console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
+      for (const post of scraped.posts) add(post);
+      await sleep(3000);
+    }
 
-    await sleep(3000);
-
-    // 2. Fallback/supplement: official Graph API (own posts only). Catches posts
-    //    if the public read is blocked or the profile is private.
+    // 2. Fallback/supplement: official Graph API (own posts only).
     const api = await fetchMediaForAccount(account);
     if (api.length) console.log(`${account.name}: ${api.length} posts from Graph API`);
     for (const post of api) add(post);
   }
 
-  // If NO scrape succeeded this run (e.g. GitHub blocked with 429), we can't see
-  // collab posts. Carry over the collab posts we captured on a previous run so a
-  // blocked run never erases them. A later successful scrape re-syncs/prunes them.
+  // If the public scrape failed (GitHub datacenter 429), keep existing collab
+  // posts so the site doesn't lose them — but captions won't refresh until a
+  // successful scrape (Mac updater or a lucky GitHub run).
   if (!anyScrapeOk) {
     let carried = 0;
     for (const post of loadExistingFeed()) {
@@ -309,7 +309,11 @@ async function main() {
         carried++;
       }
     }
-    if (carried) console.log(`Carried over ${carried} collab posts from previous feed`);
+    if (carried) {
+      console.log(
+        `Carried over ${carried} collab posts from previous feed (stale until next successful scrape)`,
+      );
+    }
   }
 
   all.sort((a, b) => new Date(b.date) - new Date(a.date));

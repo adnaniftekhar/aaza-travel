@@ -25,11 +25,16 @@ jobs:
           IG_SESSIONID: ${{ secrets.IG_SESSIONID }}
         run: node scripts/fetch-instagram.mjs
 
+      - name: Fetch blog posts
+        env:
+          BLOGGER_URL: ${{ vars.BLOGGER_URL }}
+        run: node scripts/fetch-blog.mjs
+
       - name: Commit feed if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add js/feed.json photos/feed/
+          git add js/feed.json js/blog.json photos/feed/
           if git diff --staged --quiet; then
             echo "No changes to feed.json"
           else

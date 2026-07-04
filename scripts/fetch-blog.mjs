@@ -64,6 +64,7 @@ async function main() {
       link,
       author: e.author?.[0]?.name?.$t || "Amy",
       date: e.published?.$t || "",
+      updated: e.updated?.$t || e.published?.$t || "",
     };
   });
 

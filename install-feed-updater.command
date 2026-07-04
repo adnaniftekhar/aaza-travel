@@ -1,11 +1,10 @@
 #!/bin/bash
-# Double-click this once to auto-update the Instagram feed every 2 hours from your Mac.
+# Double-click once to auto-update Instagram + blog every 2 hours from your Mac.
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
 PLIST="$HOME/Library/LaunchAgents/com.aaza.feed-update.plist"
-SCRIPT="$REPO/scripts/push-feed.sh"
+NODE_SCRIPT="$REPO/scripts/update-and-push.mjs"
 
-chmod +x "$SCRIPT"
 mkdir -p "$REPO/logs"
 
 cat > "$PLIST" << EOF
@@ -17,26 +16,27 @@ cat > "$PLIST" << EOF
   <string>com.aaza.feed-update</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>$SCRIPT</string>
+    <string>/usr/bin/env</string>
+    <string>node</string>
+    <string>$NODE_SCRIPT</string>
   </array>
   <key>StartInterval</key>
   <integer>7200</integer>
   <key>RunAtLoad</key>
   <true/>
-  <key>StandardOutPath</key>
-  <string>$REPO/logs/feed-update.log</string>
-  <key>StandardErrorPath</key>
-  <string>$REPO/logs/feed-update.log</string>
+  <key>WorkingDirectory</key>
+  <string>$REPO</string>
 </dict>
 </plist>
 EOF
 
-launchctl bootout "gui/$(id -u)/com.aaza.feed-update" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
+launchctl bootout "gui/$(id -u)/com.aaza.feed-update" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo ""
-echo "Done! The Instagram feed will auto-update every 2 hours while your Mac is on."
+echo "Done! Instagram + blog will auto-update every 2 hours while your Mac is on."
 echo "Log file: $REPO/logs/feed-update.log"
+echo ""
+/usr/bin/env node "$NODE_SCRIPT"
 echo ""
 read -n 1 -s -r -p "Press any key to close..."

@@ -203,7 +203,7 @@ function renderBlog(containerId, posts) {
     <article class="blog-card">
       ${image}
       <div class="blog-card-body">
-        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.date)}</p>
+        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
         <h2>${escapeHtml(post.title)}</h2>
         <p class="blog-excerpt">${escapeHtml(post.excerpt)}</p>
         <a class="view-ig" href="${escapeHtml(post.link)}" target="_blank" rel="noopener">Read full post →</a>
