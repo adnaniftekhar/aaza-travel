@@ -297,12 +297,26 @@ async function main() {
     for (const post of api) add(post);
   }
 
-  // If the public scrape failed (GitHub datacenter 429), keep existing collab
-  // posts so the site doesn't lose them — but captions won't refresh until a
-  // successful scrape (Mac updater or a lucky GitHub run).
+  // Always keep older #AAZA posts from the previous feed. Instagram's profile
+  // API only returns ~12 recent posts, so without this older tagged posts
+  // disappear when new ones are added.
+  const previousFeed = loadExistingFeed();
+  let preserved = 0;
+  for (const post of previousFeed) {
+    if (!post || !post.id || seen.has(post.id)) continue;
+    if (EXCLUDED_IDS.has(post.id)) continue;
+    if (!AAZA_HASHTAG.test(post.caption || "") && !INCLUDED_SHORTCODES.has(post.id)) continue;
+    seen.add(post.id);
+    all.push(post);
+    preserved++;
+  }
+  if (preserved) console.log(`Kept ${preserved} older posts from previous feed`);
+
+  // If the public scrape failed (GitHub datacenter 429), also carry over collab
+  // posts that might lack a hashtag match in the stale copy (safety net).
   if (!anyScrapeOk) {
     let carried = 0;
-    for (const post of loadExistingFeed()) {
+    for (const post of previousFeed) {
       if (post && post.collab && !seen.has(post.id)) {
         seen.add(post.id);
         all.push(post);
@@ -310,9 +324,7 @@ async function main() {
       }
     }
     if (carried) {
-      console.log(
-        `Carried over ${carried} collab posts from previous feed (stale until next successful scrape)`,
-      );
+      console.log(`Carried over ${carried} collab posts (stale until next successful scrape)`);
     }
   }
 
