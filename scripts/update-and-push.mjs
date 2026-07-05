@@ -32,7 +32,7 @@ async function main() {
   run("node scripts/fetch-instagram.mjs");
   run("node scripts/fetch-blog.mjs");
 
-  run("git add js/feed.json js/blog.json photos/feed/");
+  run("git add js/feed.json js/feed-archive.json js/blog.json photos/feed/");
   if (!hasStagedChanges()) {
     log("No changes to commit.");
     return;

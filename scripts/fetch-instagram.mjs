@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_FILE = path.join(__dirname, "../js/feed.json");
+const ARCHIVE_FILE = path.join(__dirname, "../js/feed-archive.json");
 const FEED_PHOTOS = path.join(__dirname, "../photos/feed");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
@@ -221,14 +222,64 @@ async function fetchPublicProfilePosts(account) {
   return { posts, ok: true };
 }
 
-function loadExistingFeed() {
+function loadJsonArray(filePath) {
   try {
-    const raw = fs.readFileSync(OUT_FILE, "utf8").trim();
+    const raw = fs.readFileSync(filePath, "utf8").trim();
     const list = raw ? JSON.parse(raw) : [];
     return Array.isArray(list) ? list : [];
   } catch {
     return [];
   }
+}
+
+function loadExistingFeed() {
+  return loadJsonArray(OUT_FILE);
+}
+
+// Permanent archive: every post ever synced stays here forever (unless EXCLUDED_IDS).
+// Instagram only returns ~12 recent posts, so this is the only way older posts
+// never vanish when new ones are added.
+function loadArchive() {
+  const archive = loadJsonArray(ARCHIVE_FILE);
+  const byId = new Map();
+
+  for (const post of archive) {
+    if (post?.id && !EXCLUDED_IDS.has(post.id)) byId.set(post.id, post);
+  }
+
+  // Bootstrap: pull anything from feed.json not yet in the archive.
+  for (const post of loadExistingFeed()) {
+    if (post?.id && !EXCLUDED_IDS.has(post.id) && !byId.has(post.id)) {
+      byId.set(post.id, post);
+    }
+  }
+
+  return byId;
+}
+
+// Merge fresh data into the archive. Fresh wins for caption/image/date updates.
+function upsertArchive(byId, post) {
+  if (!post?.id || EXCLUDED_IDS.has(post.id)) return false;
+
+  const prev = byId.get(post.id);
+  if (prev) {
+    byId.set(post.id, {
+      ...prev,
+      ...post,
+      collab: post.collab ?? prev.collab,
+    });
+  } else {
+    byId.set(post.id, post);
+  }
+  return true;
+}
+
+function saveFeedAndArchive(byId) {
+  const all = [...byId.values()].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const json = JSON.stringify(all, null, 2) + "\n";
+  fs.writeFileSync(ARCHIVE_FILE, json);
+  fs.writeFileSync(OUT_FILE, json);
+  return all;
 }
 
 // Walk a paginated Graph edge (e.g. /media or /collaborative_media) and collect posts.
@@ -270,68 +321,33 @@ async function fetchMediaForAccount(account) {
 }
 
 async function main() {
-  const all = [];
-  const seen = new Set();
+  const archive = loadArchive();
+  const beforeCount = archive.size;
+  let refreshed = 0;
 
   const add = (post) => {
-    if (!post || !post.id || seen.has(post.id)) return;
-    seen.add(post.id);
-    all.push(post);
+    if (upsertArchive(archive, post)) refreshed++;
   };
 
-  let anyScrapeOk = false;
-
   for (const account of ACCOUNTS) {
-    // 1. Primary: public profile grid (own posts + collab posts on that profile).
     if (account.scrapePublic) {
       const scraped = await fetchPublicProfilePosts(account);
-      if (scraped.ok) anyScrapeOk = true;
       console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
       for (const post of scraped.posts) add(post);
       await sleep(3000);
     }
 
-    // 2. Fallback/supplement: official Graph API (own posts only).
     const api = await fetchMediaForAccount(account);
     if (api.length) console.log(`${account.name}: ${api.length} posts from Graph API`);
     for (const post of api) add(post);
   }
 
-  // Always keep older #AAZA posts from the previous feed. Instagram's profile
-  // API only returns ~12 recent posts, so without this older tagged posts
-  // disappear when new ones are added.
-  const previousFeed = loadExistingFeed();
-  let preserved = 0;
-  for (const post of previousFeed) {
-    if (!post || !post.id || seen.has(post.id)) continue;
-    if (EXCLUDED_IDS.has(post.id)) continue;
-    if (!AAZA_HASHTAG.test(post.caption || "") && !INCLUDED_SHORTCODES.has(post.id)) continue;
-    seen.add(post.id);
-    all.push(post);
-    preserved++;
-  }
-  if (preserved) console.log(`Kept ${preserved} older posts from previous feed`);
-
-  // If the public scrape failed (GitHub datacenter 429), also carry over collab
-  // posts that might lack a hashtag match in the stale copy (safety net).
-  if (!anyScrapeOk) {
-    let carried = 0;
-    for (const post of previousFeed) {
-      if (post && post.collab && !seen.has(post.id)) {
-        seen.add(post.id);
-        all.push(post);
-        carried++;
-      }
-    }
-    if (carried) {
-      console.log(`Carried over ${carried} collab posts (stale until next successful scrape)`);
-    }
-  }
-
-  all.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  fs.writeFileSync(OUT_FILE, JSON.stringify(all, null, 2) + "\n");
-  console.log(`Wrote ${all.length} posts to ${OUT_FILE}`);
+  const all = saveFeedAndArchive(archive);
+  const added = all.length - beforeCount;
+  console.log(
+    `Archive: ${all.length} posts total (${refreshed} refreshed, ${added} newly added, 0 removed)`,
+  );
+  console.log(`Wrote ${OUT_FILE} and ${ARCHIVE_FILE}`);
 }
 
 main().catch((err) => {
