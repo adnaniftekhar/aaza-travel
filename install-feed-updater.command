@@ -5,6 +5,14 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 PLIST="$HOME/Library/LaunchAgents/com.aaza.feed-update.plist"
 NODE_SCRIPT="$REPO/scripts/update-and-push.mjs"
 
+# launchd does NOT have Homebrew in PATH — must use the full path to node.
+NODE_BIN="$(command -v node)"
+if [ -z "$NODE_BIN" ]; then
+  echo "ERROR: node not found. Install Node.js first (https://nodejs.org)"
+  read -n 1 -s -r -p "Press any key to close..."
+  exit 1
+fi
+
 mkdir -p "$REPO/logs"
 
 cat > "$PLIST" << EOF
@@ -16,8 +24,7 @@ cat > "$PLIST" << EOF
   <string>com.aaza.feed-update</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/env</string>
-    <string>node</string>
+    <string>$NODE_BIN</string>
     <string>$NODE_SCRIPT</string>
   </array>
   <key>StartInterval</key>
@@ -26,6 +33,15 @@ cat > "$PLIST" << EOF
   <true/>
   <key>WorkingDirectory</key>
   <string>$REPO</string>
+  <key>StandardOutPath</key>
+  <string>$REPO/logs/feed-update.log</string>
+  <key>StandardErrorPath</key>
+  <string>$REPO/logs/feed-update.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
 </dict>
 </plist>
 EOF
@@ -35,8 +51,9 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo ""
 echo "Done! Instagram + blog will auto-update every 2 hours while your Mac is on."
+echo "Using node: $NODE_BIN"
 echo "Log file: $REPO/logs/feed-update.log"
 echo ""
-/usr/bin/env node "$NODE_SCRIPT"
+"$NODE_BIN" "$NODE_SCRIPT"
 echo ""
 read -n 1 -s -r -p "Press any key to close..."
