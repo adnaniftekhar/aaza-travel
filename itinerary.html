@@ -24,28 +24,13 @@
     <h1>Itinerary</h1>
     <p class="muted itinerary-route">Paris → Marseille → Toulouse → Bordeaux → Basque Country → Edinburgh → Sardinia → Tanzania</p>
 
-    <div class="itinerary-layout">
-      <div id="timeline" class="itinerary-timeline"></div>
-
-      <aside class="itinerary-sidebar">
-        <figure class="itinerary-photo">
-          <img src="photos/itinerary.jpg" alt="Open road through the countryside on our family travels" width="400" height="260" loading="lazy">
-          <figcaption>On the road — AAZA Adventures</figcaption>
-        </figure>
-
-        <div class="itinerary-map-wrap">
-          <h2 class="itinerary-map-title">On the map</h2>
-          <p id="map-label" class="muted itinerary-map-label"></p>
-          <iframe
-            id="itinerary-map"
-            class="itinerary-map"
-            title="Map of our current location"
-            loading="lazy"
-            referrerpolicy="no-referrer-when-downgrade"
-          ></iframe>
-        </div>
-      </aside>
+    <div class="itinerary-columns muted">
+      <span>Destination</span>
+      <span>Photo</span>
+      <span>Map</span>
     </div>
+
+    <div id="timeline" class="itinerary-timeline"></div>
   </div>
 
   <footer>
@@ -59,7 +44,6 @@
   <script src="js/app.js"></script>
   <script>
     renderItinerary("timeline", ITINERARY);
-    renderItineraryMap(ITINERARY);
     renderInstagramLinks("footer-ig-links");
   </script>
 </body>

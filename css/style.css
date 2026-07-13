@@ -148,74 +148,95 @@ main {
 }
 
 .itinerary-route {
-  margin: 0.5rem 0 2rem;
+  margin: 0.5rem 0 1.5rem;
 }
 
-.itinerary-layout {
-  align-items: start;
-  display: grid;
-  gap: 2rem;
-  grid-template-columns: 1fr;
+.itinerary-columns {
+  display: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
 }
 
-.itinerary-sidebar {
+.itinerary-timeline {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
-.itinerary-photo {
-  margin: 0;
+.itinerary-stop {
+  align-items: stretch;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  margin-bottom: 0;
 }
 
-.itinerary-photo img {
-  border-radius: 10px;
+.itinerary-stop-info {
+  padding: 1.25rem;
+}
+
+.itinerary-stop-info h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.itinerary-stop-photo img {
+  border-radius: 0 0 10px 10px;
   display: block;
-  height: auto;
+  height: 200px;
   object-fit: cover;
   width: 100%;
 }
 
-.itinerary-photo figcaption {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin-top: 0.5rem;
-  text-align: center;
-}
-
-.itinerary-map-wrap {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  padding: 1rem;
-}
-
-.itinerary-map-title {
-  font-size: 1.1rem;
-  margin-bottom: 0.25rem;
-}
-
-.itinerary-map-label {
-  margin-bottom: 0.75rem;
+.itinerary-stop-map {
+  min-height: 200px;
+  padding: 0 1rem 1rem;
 }
 
 .itinerary-map {
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   display: block;
-  height: 280px;
+  height: 200px;
   width: 100%;
 }
 
-@media (min-width: 900px) {
-  .itinerary-layout {
-    grid-template-columns: 1fr minmax(280px, 340px);
+@media (min-width: 768px) {
+  .itinerary-columns {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1.1fr);
+    padding: 0 1.25rem;
   }
 
-  .itinerary-sidebar {
-    position: sticky;
-    top: 1.5rem;
+  .itinerary-stop {
+    grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1.1fr);
+  }
+
+  .itinerary-stop-photo img,
+  .itinerary-stop-map,
+  .itinerary-map {
+    height: 160px;
+  }
+
+  .itinerary-stop-photo img {
+    border-radius: 8px;
+  }
+
+  .itinerary-stop-info {
+    border-right: 1px solid var(--border);
+  }
+
+  .itinerary-stop-map {
+    padding: 1.25rem 1.25rem 1.25rem 0;
+  }
+
+  .itinerary-stop-photo {
+    align-self: center;
+    padding: 1.25rem 0;
   }
 }
 
