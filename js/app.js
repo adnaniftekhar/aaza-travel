@@ -306,3 +306,36 @@ function renderItinerary(containerId, stops) {
     })
     .join("");
 }
+
+// Approximate map centers for itinerary cities (lat, lon).
+const CITY_COORDS = {
+  Paris: [48.8566, 2.3522],
+  Marseille: [43.2965, 5.3698],
+  Toulouse: [43.6047, 1.4442],
+  Bordeaux: [44.8378, -0.5792],
+  "Saint-Jean-de-Luz": [43.3892, -1.6624],
+  Edinburgh: [55.9533, -3.1883],
+  Sardinia: [39.2238, 9.1217],
+  Tanzania: [-6.369, 34.8888],
+};
+
+function mapEmbedUrl(lat, lon) {
+  const pad = 0.45;
+  const bbox = [lon - pad, lat - pad, lon + pad, lat + pad].join("%2C");
+  const marker = `${lat}%2C${lon}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
+}
+
+function renderItineraryMap(stops) {
+  const mapEl = document.getElementById("itinerary-map");
+  const labelEl = document.getElementById("map-label");
+  if (!mapEl || !labelEl || !stops || !stops.length) return;
+
+  const current = getCurrentStop(stops, new Date()) || stops[0];
+  const coords = CITY_COORDS[current.city] || [46.5, 2.5];
+
+  mapEl.src = mapEmbedUrl(coords[0], coords[1]);
+  labelEl.textContent = current
+    ? `Showing ${current.city}, ${current.country}`
+    : "Our route across Europe and beyond";
+}
