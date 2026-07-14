@@ -375,6 +375,139 @@ section {
   margin-top: 0.5rem;
 }
 
+/* Color Hunt page */
+
+.colors-intro {
+  margin: 0.5rem 0 0;
+  max-width: 36rem;
+}
+
+.color-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.color-chip {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.75rem;
+  text-transform: uppercase;
+}
+
+.color-card {
+  position: relative;
+}
+
+.color-badge {
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  left: 0.75rem;
+  letter-spacing: 0.06em;
+  padding: 0.35rem 0.65rem;
+  position: absolute;
+  text-transform: uppercase;
+  top: 0.75rem;
+  z-index: 1;
+}
+
+.color-chip--yellow,
+.color-card--yellow .color-badge {
+  background: #f1c40f;
+  color: #2c2416;
+}
+
+.color-chip--orange,
+.color-card--orange .color-badge {
+  background: #e67e22;
+  color: #fff;
+}
+
+.color-chip--red,
+.color-card--red .color-badge {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.color-chip--green,
+.color-card--green .color-badge {
+  background: #27ae60;
+  color: #fff;
+}
+
+.color-chip--blue,
+.color-card--blue .color-badge {
+  background: #3498db;
+  color: #fff;
+}
+
+.color-chip--purple,
+.color-card--purple .color-badge {
+  background: #9b59b6;
+  color: #fff;
+}
+
+.color-chip--pink,
+.color-card--pink .color-badge {
+  background: #e91e8c;
+  color: #fff;
+}
+
+.color-chip--violet,
+.color-card--violet .color-badge {
+  background: #8e44ad;
+  color: #fff;
+}
+
+.color-chip--indigo,
+.color-card--indigo .color-badge {
+  background: #3f51b5;
+  color: #fff;
+}
+
+.color-chip--black,
+.color-card--black .color-badge {
+  background: #2c2416;
+  color: #fff;
+}
+
+.color-chip--white,
+.color-card--white .color-badge {
+  background: #fff;
+  border: 1px solid var(--border);
+  color: #2c2416;
+}
+
+.color-chip--brown,
+.color-card--brown .color-badge {
+  background: #8b5a2b;
+  color: #fff;
+}
+
+.color-chip--gray,
+.color-card--gray .color-badge,
+.color-chip--grey,
+.color-card--grey .color-badge {
+  background: #95a5a6;
+  color: #fff;
+}
+
+.color-chip--gold,
+.color-card--gold .color-badge {
+  background: #d4af37;
+  color: #2c2416;
+}
+
+.color-chip--silver,
+.color-card--silver .color-badge {
+  background: #bdc3c7;
+  color: #2c2416;
+}
+
 .feed-video-placeholder {
   align-items: center;
   aspect-ratio: 1;

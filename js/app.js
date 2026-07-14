@@ -59,6 +59,36 @@ function feedImageUrl(item) {
   return url;
 }
 
+const COLOR_POST_RE =
+  /^(YELLOW|ORANGE|GREEN|RED|BLUE|PURPLE|PINK|VIOLET|INDIGO|BLACK|WHITE|BROWN|GRAY|GREY|GOLD|SILVER)\s*:/im;
+
+function parseColorFromCaption(caption) {
+  const match = (caption || "").trim().match(COLOR_POST_RE);
+  return match ? match[1].toUpperCase() : "";
+}
+
+function colorCaptionText(caption, color) {
+  if (!color) return caption || "";
+  const prefix = new RegExp(`^${color}\\s*:\\s*`, "i");
+  return (caption || "").replace(prefix, "").trim();
+}
+
+function mergePostsById(...arrays) {
+  const seen = new Map();
+  for (const arr of arrays) {
+    for (const post of arr || []) {
+      if (post && post.id) seen.set(post.id, post);
+    }
+  }
+  return [...seen.values()];
+}
+
+function filterColorPosts(items) {
+  return (items || [])
+    .filter((item) => parseColorFromCaption(item.caption))
+    .sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
+}
+
 function feedCardMedia(item, caption) {
   const img = feedImageUrl(item);
   const isVideo =
@@ -154,6 +184,75 @@ function renderManualEmbeds(items) {
         data-instgrm-version="14"></blockquote>`;
     })
     .join("");
+}
+
+function renderColorPalette(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const colors = [...new Set(items.map((item) => parseColorFromCaption(item.caption)))].filter(
+    Boolean,
+  );
+
+  if (colors.length === 0) {
+    el.hidden = true;
+    return;
+  }
+
+  el.hidden = false;
+  el.innerHTML = colors
+    .map(
+      (color) =>
+        `<span class="color-chip color-chip--${color.toLowerCase()}">${escapeHtml(color)}</span>`,
+    )
+    .join("");
+}
+
+function renderColorsFeed(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!items || items.length === 0) {
+    el.innerHTML = `
+      <div class="feed-empty">
+        <p>No color posts yet.</p>
+        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code> or <code>ORANGE:</code>, it will show up here automatically.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = items
+    .map((item) => {
+      const href = item.permalink || "#";
+      const color = parseColorFromCaption(item.caption);
+      const caption = colorCaptionText(item.caption, color);
+      const author = item.author || "";
+      const date = item.date || item.timestamp || "";
+      const colorClass = color ? ` color-card--${color.toLowerCase()}` : "";
+
+      return `
+    <a class="feed-card color-card${colorClass}" href="${escapeHtml(href)}" target="_blank" rel="noopener">
+      ${color ? `<span class="color-badge">${escapeHtml(color)}</span>` : ""}
+      ${feedCardMedia(item, caption)}
+      <div class="feed-card-body">
+        <p class="meta">${escapeHtml(author)} · ${formatDate(date)}</p>
+        <p class="caption">${escapeHtml(caption)}</p>
+        <span class="view-ig">View on Instagram →</span>
+      </div>
+    </a>`;
+    })
+    .join("");
+}
+
+async function loadColorsPage(feedId, paletteId) {
+  const [feed, archive] = await Promise.all([
+    loadJsonArray("js/feed.json"),
+    loadJsonArray("js/feed-archive.json"),
+  ]);
+
+  const colorPosts = filterColorPosts(mergePostsById(feed, archive));
+  renderColorPalette(paletteId, colorPosts);
+  renderColorsFeed(feedId, colorPosts);
 }
 
 async function loadInstagramFeed(containerId) {
