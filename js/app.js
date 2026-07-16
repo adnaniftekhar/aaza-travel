@@ -280,6 +280,21 @@ async function loadInstagramFeed(containerId) {
   if (manual && manual.length) processInstagramEmbeds();
 }
 
+function blogPostUrl(post) {
+  const key = post.slug || post.id || "";
+  return `post.html?p=${encodeURIComponent(key)}`;
+}
+
+function findBlogPost(posts, key) {
+  if (!key || !posts) return null;
+  const decoded = decodeURIComponent(key);
+  return (
+    posts.find((post) => post.slug === decoded) ||
+    posts.find((post) => post.id === decoded) ||
+    null
+  );
+}
+
 function renderBlog(containerId, posts) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -295,18 +310,21 @@ function renderBlog(containerId, posts) {
 
   el.innerHTML = posts
     .map((post) => {
+      const href = blogPostUrl(post);
       const image = post.image
         ? `<img src="${escapeHtml(post.image)}" alt="${escapeHtml(post.title)}" loading="lazy">`
         : "";
       return `
     <article class="blog-card">
-      ${image}
-      <div class="blog-card-body">
-        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
-        <h2>${escapeHtml(post.title)}</h2>
-        <p class="blog-excerpt">${escapeHtml(post.excerpt)}</p>
-        <a class="view-ig" href="${escapeHtml(post.link)}" target="_blank" rel="noopener">Read full post →</a>
-      </div>
+      <a class="blog-card-link" href="${escapeHtml(href)}">
+        ${image}
+        <div class="blog-card-body">
+          <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
+          <h2>${escapeHtml(post.title)}</h2>
+          <p class="blog-excerpt">${escapeHtml(post.excerpt)}</p>
+          <span class="view-ig">Read full post →</span>
+        </div>
+      </a>
     </article>`;
     })
     .join("");
@@ -320,6 +338,125 @@ async function loadBlog(containerId) {
     renderBlog(containerId, posts);
   } catch {
     renderBlog(containerId, []);
+  }
+}
+
+function setupBlogScroll(articleEl) {
+  const body = articleEl.querySelector(".post-body");
+  const btn = articleEl.querySelector(".post-scroll-btn");
+  if (!body || !btn || btn.dataset.bound === "1") return;
+  btn.dataset.bound = "1";
+
+  function updateScrollUi() {
+    const overflow = body.scrollHeight > body.clientHeight + 8;
+    const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 12;
+    btn.hidden = !overflow || atBottom;
+  }
+
+  btn.addEventListener("click", () => {
+    body.scrollBy({ top: Math.max(160, body.clientHeight * 0.7), behavior: "smooth" });
+  });
+
+  body.addEventListener("scroll", updateScrollUi, { passive: true });
+  window.addEventListener("resize", updateScrollUi);
+  updateScrollUi();
+  // Images / fonts can change height after load.
+  setTimeout(updateScrollUi, 300);
+  setTimeout(updateScrollUi, 1000);
+}
+
+function applyPostOrientation(article, img) {
+  if (!article || !img || !img.naturalWidth) return;
+  const isPortrait = img.naturalHeight > img.naturalWidth * 1.05;
+  article.classList.toggle("post--portrait", isPortrait);
+  article.classList.toggle("post--landscape", !isPortrait);
+}
+
+function renderBlogPost(containerId, post) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!post) {
+    el.innerHTML = `
+      <div class="feed-empty">
+        <p>Post not found.</p>
+        <p class="muted"><a href="blog.html">← Back to the journal</a></p>
+      </div>`;
+    return;
+  }
+
+  const orientation = post.orientation || "landscape";
+  const layoutClass =
+    orientation === "portrait" ? "post--portrait" : "post--landscape";
+  const image = post.image
+    ? `<figure class="post-image">
+        <img src="${escapeHtml(post.image)}" alt="${escapeHtml(post.title)}" loading="eager">
+      </figure>`
+    : "";
+  const bodyHtml = post.body || `<p>${escapeHtml(post.excerpt || "")}</p>`;
+
+  el.innerHTML = `
+    <article class="post ${layoutClass}">
+      <a class="post-back" href="blog.html">← Journal</a>
+      ${image}
+      <div class="post-content">
+        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
+        <h1>${escapeHtml(post.title)}</h1>
+        <div class="post-body-wrap">
+          <div class="post-body">${bodyHtml}</div>
+          <button type="button" class="post-scroll-btn" hidden>Scroll for more ↓</button>
+        </div>
+        <p class="post-source muted">
+          Also on
+          <a href="${escapeHtml(post.link)}" target="_blank" rel="noopener">Blogger</a>
+        </p>
+      </div>
+    </article>`;
+
+  const article = el.querySelector(".post");
+  setupBlogScroll(article);
+
+  const img = el.querySelector(".post-image img");
+  if (img) {
+    const syncOrientation = () => {
+      applyPostOrientation(article, img);
+      // Re-check overflow after layout flip.
+      const body = article.querySelector(".post-body");
+      const btn = article.querySelector(".post-scroll-btn");
+      if (body && btn) {
+        const overflow = body.scrollHeight > body.clientHeight + 8;
+        const atBottom =
+          body.scrollTop + body.clientHeight >= body.scrollHeight - 12;
+        btn.hidden = !overflow || atBottom;
+      }
+    };
+    if (img.complete && img.naturalWidth) syncOrientation();
+    else img.addEventListener("load", syncOrientation);
+  }
+}
+
+async function loadBlogPost(containerId) {
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get("p") || params.get("id") || "";
+  const el = document.getElementById(containerId);
+
+  try {
+    const res = await fetch(`js/blog.json?v=${Date.now()}`);
+    if (!res.ok) throw new Error("Blog not found");
+    const posts = await res.json();
+    const post = findBlogPost(posts, key);
+    if (post && post.title) {
+      document.title = `${post.title} — AAZA Travels`;
+    }
+    renderBlogPost(containerId, post);
+  } catch {
+    if (el) {
+      el.innerHTML = `
+        <div class="feed-empty">
+          <p>Could not load this post.</p>
+          <p class="muted"><a href="blog.html">← Back to the journal</a></p>
+        </div>`;
+    }
   }
 }
 
