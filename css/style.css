@@ -433,12 +433,38 @@ section {
 }
 
 .color-chip {
+  appearance: none;
+  border: 2px solid transparent;
   border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  padding: 0.35rem 0.75rem;
+  padding: 0.4rem 0.85rem;
   text-transform: uppercase;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.color-chip:hover {
+  transform: translateY(-1px);
+}
+
+.color-chip.is-active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px rgba(44, 36, 22, 0.12);
+}
+
+.color-chip--all {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.color-chip--all.is-active {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
 }
 
 .color-card {
@@ -451,10 +477,14 @@ section {
   font-weight: 700;
   left: 0.75rem;
   letter-spacing: 0.06em;
+  max-width: calc(100% - 1.5rem);
+  overflow: hidden;
   padding: 0.35rem 0.65rem;
   position: absolute;
+  text-overflow: ellipsis;
   text-transform: uppercase;
   top: 0.75rem;
+  white-space: nowrap;
   z-index: 1;
 }
 
@@ -549,6 +579,32 @@ section {
 .color-card--silver .color-badge {
   background: #bdc3c7;
   color: #2c2416;
+}
+
+.color-chip--turquoise,
+.color-card--turquoise .color-badge {
+  background: #1abc9c;
+  color: #fff;
+}
+
+.color-chip--teal,
+.color-card--teal .color-badge {
+  background: #16a085;
+  color: #fff;
+}
+
+.color-chip--cyan,
+.color-card--cyan .color-badge,
+.color-chip--aqua,
+.color-card--aqua .color-badge {
+  background: #00bcd4;
+  color: #fff;
+}
+
+.color-chip--navy,
+.color-card--navy .color-badge {
+  background: #1a3a6b;
+  color: #fff;
 }
 
 .feed-video-placeholder {

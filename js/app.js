@@ -59,18 +59,171 @@ function feedImageUrl(item) {
   return url;
 }
 
-const COLOR_POST_RE =
-  /^(YELLOW|ORANGE|GREEN|RED|BLUE|PURPLE|PINK|VIOLET|INDIGO|BLACK|WHITE|BROWN|GRAY|GREY|GOLD|SILVER)\s*:/im;
+const COLOR_WORDS = [
+  "YELLOW",
+  "ORANGE",
+  "GREEN",
+  "RED",
+  "BLUE",
+  "PURPLE",
+  "PINK",
+  "VIOLET",
+  "INDIGO",
+  "BLACK",
+  "WHITE",
+  "BROWN",
+  "GRAY",
+  "GREY",
+  "GOLD",
+  "SILVER",
+  "TURQUOISE",
+  "TEAL",
+  "CYAN",
+  "AQUA",
+  "NAVY",
+  "MAGENTA",
+  "CORAL",
+  "MAROON",
+  "OLIVE",
+  "LIME",
+  "BEIGE",
+  "CREAM",
+  "IVORY",
+  "CRIMSON",
+  "SCARLET",
+  "AMBER",
+  "LAVENDER",
+  "PEACH",
+  "MINT",
+  "FUCHSIA",
+  "CHARTREUSE",
+  "BURGUNDY",
+  "MUSTARD",
+  "SAFFRON",
+  "COBALT",
+  "AZURE",
+  "CERULEAN",
+  "EMERALD",
+  "JADE",
+  "SAGE",
+  "KHAKI",
+  "TAN",
+  "RUST",
+  "COPPER",
+  "BRONZE",
+  "LIGHT",
+  "DARK",
+  "DEEP",
+  "BRIGHT",
+  "PALE",
+  "SOFT",
+  "HOT",
+  "NEON",
+  "ROYAL",
+  "FOREST",
+  "SEA",
+  "SKY",
+  "BABY",
+];
+
+const COLOR_WORD_RE = COLOR_WORDS.join("|");
+const COLOR_POST_RE = new RegExp(
+  `^((?:(?:${COLOR_WORD_RE})\\s+)*(?:${COLOR_WORD_RE}))\\s*:`,
+  "im",
+);
+
+// Map shade names to the family chip they belong under.
+const COLOR_FAMILY_ALIASES = {
+  TURQUOISE: "BLUE",
+  TEAL: "BLUE",
+  CYAN: "BLUE",
+  AQUA: "BLUE",
+  NAVY: "BLUE",
+  COBALT: "BLUE",
+  AZURE: "BLUE",
+  CERULEAN: "BLUE",
+  SKY: "BLUE",
+  SEA: "BLUE",
+  EMERALD: "GREEN",
+  JADE: "GREEN",
+  SAGE: "GREEN",
+  OLIVE: "GREEN",
+  LIME: "GREEN",
+  MINT: "GREEN",
+  FOREST: "GREEN",
+  CHARTREUSE: "GREEN",
+  LAVENDER: "PURPLE",
+  MAGENTA: "PINK",
+  FUCHSIA: "PINK",
+  CORAL: "ORANGE",
+  PEACH: "ORANGE",
+  AMBER: "ORANGE",
+  MUSTARD: "YELLOW",
+  SAFFRON: "YELLOW",
+  CREAM: "WHITE",
+  IVORY: "WHITE",
+  BEIGE: "BROWN",
+  TAN: "BROWN",
+  KHAKI: "BROWN",
+  RUST: "BROWN",
+  COPPER: "BROWN",
+  BRONZE: "BROWN",
+  MAROON: "RED",
+  CRIMSON: "RED",
+  SCARLET: "RED",
+  BURGUNDY: "RED",
+  GREY: "GRAY",
+};
+
+const COLOR_MODIFIERS = new Set([
+  "LIGHT",
+  "DARK",
+  "DEEP",
+  "BRIGHT",
+  "PALE",
+  "SOFT",
+  "HOT",
+  "NEON",
+  "ROYAL",
+  "FOREST",
+  "SEA",
+  "SKY",
+  "BABY",
+]);
 
 function parseColorFromCaption(caption) {
   const match = (caption || "").trim().match(COLOR_POST_RE);
-  return match ? match[1].toUpperCase() : "";
+  return match ? match[1].replace(/\s+/g, " ").toUpperCase() : "";
+}
+
+function colorFamily(label) {
+  if (!label) return "";
+  const parts = label.split(/\s+/).filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (COLOR_MODIFIERS.has(part)) continue;
+    if (COLOR_FAMILY_ALIASES[part]) return COLOR_FAMILY_ALIASES[part];
+    return part;
+  }
+  return parts[parts.length - 1] || "";
 }
 
 function colorCaptionText(caption, color) {
   if (!color) return caption || "";
-  const prefix = new RegExp(`^${color}\\s*:\\s*`, "i");
+  const escaped = color.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const prefix = new RegExp(`^${escaped}\\s*:\\s*`, "i");
   return (caption || "").replace(prefix, "").trim();
+}
+
+function colorSlug(label) {
+  return (label || "").toLowerCase().replace(/\s+/g, "-");
+}
+
+function postMatchesColorFilter(label, filter) {
+  if (!filter || filter === "ALL") return true;
+  const upper = (label || "").toUpperCase();
+  if (colorFamily(upper) === filter) return true;
+  return new RegExp(`\\b${filter}\\b`, "i").test(upper);
 }
 
 function mergePostsById(...arrays) {
@@ -186,26 +339,41 @@ function renderManualEmbeds(items) {
     .join("");
 }
 
-function renderColorPalette(containerId, items) {
+function renderColorPalette(containerId, items, activeFilter, onFilter) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  const colors = [...new Set(items.map((item) => parseColorFromCaption(item.caption)))].filter(
-    Boolean,
-  );
+  const families = [
+    ...new Set(items.map((item) => colorFamily(parseColorFromCaption(item.caption)))),
+  ]
+    .filter(Boolean)
+    .sort();
 
-  if (colors.length === 0) {
+  if (families.length === 0) {
     el.hidden = true;
     return;
   }
 
   el.hidden = false;
-  el.innerHTML = colors
-    .map(
-      (color) =>
-        `<span class="color-chip color-chip--${color.toLowerCase()}">${escapeHtml(color)}</span>`,
-    )
-    .join("");
+  const chips = [
+    `<button type="button" class="color-chip color-chip--all${
+      !activeFilter || activeFilter === "ALL" ? " is-active" : ""
+    }" data-color="ALL">All</button>`,
+    ...families.map((color) => {
+      const active = activeFilter === color ? " is-active" : "";
+      return `<button type="button" class="color-chip color-chip--${colorSlug(
+        color,
+      )}${active}" data-color="${escapeHtml(color)}">${escapeHtml(color)}</button>`;
+    }),
+  ];
+  el.innerHTML = chips.join("");
+
+  el.querySelectorAll(".color-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const next = chip.getAttribute("data-color") || "ALL";
+      onFilter(next === activeFilter ? "ALL" : next);
+    });
+  });
 }
 
 function renderColorsFeed(containerId, items) {
@@ -216,7 +384,7 @@ function renderColorsFeed(containerId, items) {
     el.innerHTML = `
       <div class="feed-empty">
         <p>No color posts yet.</p>
-        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code> or <code>ORANGE:</code>, it will show up here automatically.</p>
+        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code> or <code>TURQUOISE BLUE:</code>, it will show up here automatically.</p>
       </div>`;
     return;
   }
@@ -225,10 +393,11 @@ function renderColorsFeed(containerId, items) {
     .map((item) => {
       const href = item.permalink || "#";
       const color = parseColorFromCaption(item.caption);
+      const family = colorFamily(color);
       const caption = colorCaptionText(item.caption, color);
       const author = item.author || "";
       const date = item.date || item.timestamp || "";
-      const colorClass = color ? ` color-card--${color.toLowerCase()}` : "";
+      const colorClass = family ? ` color-card--${colorSlug(family)}` : "";
 
       return `
     <a class="feed-card color-card${colorClass}" href="${escapeHtml(href)}" target="_blank" rel="noopener">
@@ -251,8 +420,23 @@ async function loadColorsPage(feedId, paletteId) {
   ]);
 
   const colorPosts = filterColorPosts(mergePostsById(feed, archive));
-  renderColorPalette(paletteId, colorPosts);
-  renderColorsFeed(feedId, colorPosts);
+  let activeFilter = "ALL";
+
+  function paint() {
+    const visible =
+      activeFilter === "ALL"
+        ? colorPosts
+        : colorPosts.filter((item) =>
+            postMatchesColorFilter(parseColorFromCaption(item.caption), activeFilter),
+          );
+    renderColorPalette(paletteId, colorPosts, activeFilter, (next) => {
+      activeFilter = next;
+      paint();
+    });
+    renderColorsFeed(feedId, visible);
+  }
+
+  paint();
 }
 
 async function loadInstagramFeed(containerId) {
