@@ -9,6 +9,73 @@ const FEED_PHOTOS = path.join(__dirname, "../photos/feed");
 
 const AAZA_HASHTAG = /#aaza\w+/i;
 
+// Color-hunt captions like "BROWN:" or "TURQUOISE BLUE:" are always kept,
+// even if the #AAZA hashtag was forgotten.
+const COLOR_WORDS = [
+  "YELLOW",
+  "ORANGE",
+  "GREEN",
+  "RED",
+  "BLUE",
+  "PURPLE",
+  "PINK",
+  "VIOLET",
+  "INDIGO",
+  "BLACK",
+  "WHITE",
+  "BROWN",
+  "GRAY",
+  "GREY",
+  "GOLD",
+  "SILVER",
+  "TURQUOISE",
+  "TEAL",
+  "CYAN",
+  "AQUA",
+  "NAVY",
+  "MAGENTA",
+  "CORAL",
+  "MAROON",
+  "OLIVE",
+  "LIME",
+  "BEIGE",
+  "CREAM",
+  "IVORY",
+  "CRIMSON",
+  "SCARLET",
+  "AMBER",
+  "LAVENDER",
+  "PEACH",
+  "MINT",
+  "FUCHSIA",
+  "LIGHT",
+  "DARK",
+  "DEEP",
+  "BRIGHT",
+  "PALE",
+  "SOFT",
+  "HOT",
+  "NEON",
+  "ROYAL",
+  "FOREST",
+  "SEA",
+  "SKY",
+  "BABY",
+];
+const COLOR_CAPTION_RE = new RegExp(
+  `^((?:(?:${COLOR_WORDS.join("|")})\\s+)*(?:${COLOR_WORDS.join("|")}))\\s*:`,
+  "im",
+);
+
+function shouldIncludeCaption(caption, shortcode) {
+  const text = caption || "";
+  return (
+    AAZA_HASHTAG.test(text) ||
+    COLOR_CAPTION_RE.test(text.trim()) ||
+    INCLUDED_SHORTCODES.has(shortcode)
+  );
+}
+
 // Post IDs to never show, even if they still match a hashtag (old test posts).
 const EXCLUDED_IDS = new Set([
   "18087449387048294", // test: La Paz whale signs
@@ -111,7 +178,7 @@ async function buildPost(item, account) {
 
   const shortcode = extractShortcode(item.permalink);
   const id = shortcode || item.id;
-  if (!AAZA_HASHTAG.test(item.caption || "") && !INCLUDED_SHORTCODES.has(shortcode)) return null;
+  if (!shouldIncludeCaption(item.caption || "", shortcode)) return null;
   const { image, mediaType } = await mediaImage(item, account.token);
   const localImage = await cacheImage(image, id);
 
@@ -134,7 +201,7 @@ async function buildPostFromNode(node, profileAccount) {
   if (EXCLUDED_IDS.has(shortcode) || EXCLUDED_IDS.has(node.id)) return null;
 
   const caption = node.edge_media_to_caption?.edges?.[0]?.node?.text || "";
-  if (!AAZA_HASHTAG.test(caption) && !INCLUDED_SHORTCODES.has(shortcode)) return null;
+  if (!shouldIncludeCaption(caption, shortcode)) return null;
 
   const image = node.display_url || "";
   const localImage = await cacheImage(image, shortcode);
@@ -324,6 +391,8 @@ async function main() {
   const archive = loadArchive();
   const beforeCount = archive.size;
   let refreshed = 0;
+  let scrapeFailed = false;
+  let scrapeAttempted = false;
 
   const add = (post) => {
     if (upsertArchive(archive, post)) refreshed++;
@@ -331,8 +400,10 @@ async function main() {
 
   for (const account of ACCOUNTS) {
     if (account.scrapePublic) {
+      scrapeAttempted = true;
       const scraped = await fetchPublicProfilePosts(account);
       console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
+      if (!scraped.ok) scrapeFailed = true;
       for (const post of scraped.posts) add(post);
       await sleep(3000);
     }
@@ -348,6 +419,12 @@ async function main() {
     `Archive: ${all.length} posts total (${refreshed} refreshed, ${added} newly added, 0 removed)`,
   );
   console.log(`Wrote ${OUT_FILE} and ${ARCHIVE_FILE}`);
+
+  if (scrapeAttempted && scrapeFailed) {
+    throw new Error(
+      "Instagram blocked the public profile scrape, so Amy collab / color posts may be missing. Use add-instagram-post.command to add the post manually, or try again later.",
+    );
+  }
 }
 
 main().catch((err) => {
