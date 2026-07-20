@@ -32,6 +32,10 @@ function extractShortcode(input) {
   return "";
 }
 
+function isReelUrl(input) {
+  return /\/reel\//i.test(input || "");
+}
+
 function prompt(message, defaultValue = "") {
   const script = defaultValue
     ? `text returned of (display dialog ${JSON.stringify(message)} default answer ${JSON.stringify(defaultValue)})`
@@ -45,7 +49,7 @@ function prompt(message, defaultValue = "") {
 
 function chooseImage() {
   const script = `
-    set theFile to choose file with prompt "Optional: choose the Instagram photo to show on the site (Cancel to skip)" of type {"public.image"}
+    set theFile to choose file with prompt "Could not auto-download the photo. Choose it from Downloads (or Cancel to skip)" of type {"public.image"}
     return POSIX path of theFile
   `;
   try {
@@ -62,6 +66,49 @@ function upsert(posts, post) {
   return posts;
 }
 
+function guessAuthor(caption) {
+  const first = (caption || "").split("\n")[0];
+  if (
+    /^(YELLOW|ORANGE|GREEN|RED|BLUE|PURPLE|PINK|BROWN|BLACK|WHITE|GRAY|GREY|GOLD|SILVER|TURQUOISE)\b/i.test(
+      first,
+    )
+  ) {
+    return "Amy";
+  }
+  return "Adnan";
+}
+
+async function downloadCoverImage(shortcode) {
+  fs.mkdirSync(FEED_PHOTOS, { recursive: true });
+  const dest = path.join(FEED_PHOTOS, `${shortcode}.jpg`);
+  const urls = [
+    `https://www.instagram.com/p/${shortcode}/media/?size=l`,
+    `https://www.instagram.com/reel/${shortcode}/media/?size=l`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        },
+        redirect: "follow",
+      });
+      if (!res.ok) continue;
+      const type = res.headers.get("content-type") || "";
+      if (!type.includes("image")) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 1000) continue;
+      fs.writeFileSync(dest, buf);
+      return `photos/feed/${shortcode}.jpg`;
+    } catch {
+      /* try next */
+    }
+  }
+  return "";
+}
+
 async function main() {
   const argUrl = process.argv[2] || "";
   const argCaption = process.argv[3] || "";
@@ -69,7 +116,7 @@ async function main() {
   const url =
     argUrl ||
     prompt(
-      "Paste the Instagram post link for the missing color post (example: https://www.instagram.com/p/XXXX/)",
+      "Paste the Instagram post/reel LINK that is missing from the website",
     );
   const shortcode = extractShortcode(url);
   if (!shortcode) {
@@ -79,37 +126,35 @@ async function main() {
 
   const caption =
     argCaption ||
-    prompt(
-      "Paste the FULL caption from Instagram (must start like BROWN: ...)",
-      "BROWN: ",
-    );
+    prompt("Paste the FULL caption from that Instagram post");
   if (!caption.trim()) {
     console.error("Caption is required.");
     process.exit(1);
   }
 
-  let imagePath = "";
-  const chosen = argUrl && argCaption ? "" : chooseImage();
-  if (chosen) {
-    fs.mkdirSync(FEED_PHOTOS, { recursive: true });
-    const dest = path.join(FEED_PHOTOS, `${shortcode}.jpg`);
-    fs.copyFileSync(chosen, dest);
-    imagePath = `photos/feed/${shortcode}.jpg`;
+  let imagePath = await downloadCoverImage(shortcode);
+  if (!imagePath && !(argUrl && argCaption)) {
+    const chosen = chooseImage();
+    if (chosen) {
+      fs.mkdirSync(FEED_PHOTOS, { recursive: true });
+      const dest = path.join(FEED_PHOTOS, `${shortcode}.jpg`);
+      fs.copyFileSync(chosen, dest);
+      imagePath = `photos/feed/${shortcode}.jpg`;
+    }
   }
 
+  const reel = isReelUrl(url);
   const post = {
     id: shortcode,
-    author: /brown|yellow|orange|green|red|blue|purple|pink|turquoise/i.test(
-      caption.split("\n")[0],
-    )
-      ? "Amy"
-      : "Amy",
+    author: guessAuthor(caption),
     caption: caption.trim(),
     image: imagePath,
-    mediaType: "IMAGE",
-    permalink: `https://www.instagram.com/p/${shortcode}/`,
+    mediaType: reel ? "VIDEO" : "IMAGE",
+    permalink: reel
+      ? `https://www.instagram.com/reel/${shortcode}/`
+      : `https://www.instagram.com/p/${shortcode}/`,
     date: new Date().toISOString(),
-    collab: true,
+    collab: guessAuthor(caption) === "Amy",
   };
 
   const feed = upsert(loadPosts(FEED_FILE), post);
@@ -118,8 +163,9 @@ async function main() {
   savePosts(ARCHIVE_FILE, archive);
 
   console.log(`Added/updated post ${shortcode}`);
+  console.log(`Author: ${post.author}`);
   console.log(`Caption starts: ${post.caption.split("\n")[0].slice(0, 80)}`);
-  console.log(`Image: ${imagePath || "(none yet — card may show placeholder until you add a photo)"}`);
+  console.log(`Image: ${imagePath || "(none)"}`);
 }
 
 main().catch((err) => {

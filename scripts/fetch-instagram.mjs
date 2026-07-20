@@ -170,26 +170,41 @@ function extractShortcode(permalink) {
   return m ? m[1] : "";
 }
 
-const MEDIA_FIELDS = "id,caption,media_url,permalink,timestamp,media_type,thumbnail_url";
+const MEDIA_FIELDS =
+  "id,caption,media_url,permalink,timestamp,media_type,thumbnail_url,username";
 
 // Turn one raw Graph API media item into a feed post (or null if it should be skipped).
-async function buildPost(item, account) {
+async function buildPost(item, account, options = {}) {
   if (EXCLUDED_IDS.has(item.id)) return null;
 
   const shortcode = extractShortcode(item.permalink);
   const id = shortcode || item.id;
   if (!shouldIncludeCaption(item.caption || "", shortcode)) return null;
   const { image, mediaType } = await mediaImage(item, account.token);
-  const localImage = await cacheImage(image, id);
+  let localImage = await cacheImage(image, id);
+
+  // Fallback cover for reels/collabs when Graph gives no downloadable URL.
+  if (!localImage && shortcode) {
+    localImage = await cacheImage(
+      `https://www.instagram.com/p/${shortcode}/media/?size=l`,
+      id,
+    );
+  }
+
+  const isCollab = !!options.collab;
+  const author = isCollab
+    ? authorFromUsername(item.username, account.name)
+    : account.name;
 
   return {
     id,
-    author: account.name,
+    author,
     caption: item.caption || "",
     image: localImage || image,
     mediaType,
     permalink: item.permalink || "",
     date: item.timestamp || "",
+    collab: isCollab,
   };
 }
 
@@ -247,18 +262,37 @@ function sleep(ms) {
 // Read a public profile's grid via Instagram's web endpoint. Returns own posts
 // AND collab posts. Returns { posts, ok } so callers know if the read succeeded.
 async function fetchPublicProfilePosts(account) {
-  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${account.username}`;
+  const legacy = await fetchWebProfileInfo(account);
+  if (legacy.ok) return legacy;
+
+  // web_profile_info is heavily rate-limited / broken in 2026. Fall back to the
+  // GraphQL timeline query used by Instagram's own website (and tools like Instaloader).
+  const graphql = await fetchGraphqlProfilePosts(account);
+  if (graphql.ok) return graphql;
+
+  return { posts: [], ok: false };
+}
+
+function igWebHeaders(account) {
   const headers = {
     "X-IG-App-ID": "936619743392459",
     "User-Agent":
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     Referer: `https://www.instagram.com/${account.username}/`,
+    "X-Requested-With": "XMLHttpRequest",
   };
   if (IG_SESSIONID) {
     const parts = [`sessionid=${IG_SESSIONID}`];
     if (IG_DS_USER_ID) parts.push(`ds_user_id=${IG_DS_USER_ID}`);
     headers.Cookie = parts.join("; ");
+    headers["X-CSRFToken"] = "missing";
   }
+  return headers;
+}
+
+async function fetchWebProfileInfo(account) {
+  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${account.username}`;
+  const headers = igWebHeaders(account);
 
   let data;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -273,7 +307,7 @@ async function fetchPublicProfilePosts(account) {
       break;
     } catch (err) {
       if (attempt === 3) {
-        console.log(`${account.name}: public profile read failed (${err.message})`);
+        console.log(`${account.name}: web_profile_info failed (${err.message})`);
         return { posts: [], ok: false };
       }
       await sleep(attempt * 5000);
@@ -287,6 +321,105 @@ async function fetchPublicProfilePosts(account) {
     if (post) posts.push(post);
   }
   return { posts, ok: true };
+}
+
+/** Convert Instagram "iphone struct" timeline nodes into our feed shape. */
+async function buildPostFromIphoneStruct(media, profileAccount) {
+  const shortcode = media.code || media.shortcode;
+  if (!shortcode) return null;
+  if (EXCLUDED_IDS.has(shortcode) || EXCLUDED_IDS.has(String(media.pk || ""))) return null;
+
+  const caption =
+    (media.caption && (media.caption.text || media.caption)) ||
+    media.caption_text ||
+    "";
+  if (!shouldIncludeCaption(caption, shortcode)) return null;
+
+  const image =
+    media.image_versions2?.candidates?.[0]?.url ||
+    media.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url ||
+    "";
+  const localImage = await cacheImage(image, shortcode);
+  const ownerUsername = media.user?.username || media.owner?.username;
+
+  return {
+    id: shortcode,
+    author: authorFromUsername(ownerUsername, profileAccount.name),
+    caption,
+    image: localImage || image,
+    mediaType: media.media_type === 2 ? "VIDEO" : "IMAGE",
+    permalink: `https://www.instagram.com/p/${shortcode}/`,
+    date: media.taken_at
+      ? new Date(media.taken_at * 1000).toISOString()
+      : "",
+    collab: !!ownerUsername && ownerUsername !== profileAccount.username,
+  };
+}
+
+async function fetchGraphqlProfilePosts(account) {
+  // PolarisProfilePostsQuery / user timeline — current Instagram web client query.
+  const docIds = ["34579740524958711", "7898261790222653", "7950326061742207"];
+  const headers = {
+    ...igWebHeaders(account),
+    "Content-Type": "application/x-www-form-urlencoded",
+    "X-FB-LSD": "AVqbxe3J_YA",
+  };
+
+  for (const docId of docIds) {
+    const variables = {
+      data: {
+        count: 24,
+        include_relationship_info: true,
+        latest_besties_reel_media: true,
+        latest_reel_media: true,
+      },
+      username: account.username,
+    };
+    try {
+      const body = new URLSearchParams({
+        doc_id: docId,
+        variables: JSON.stringify(variables),
+      });
+      const res = await fetch("https://www.instagram.com/graphql/query", {
+        method: "POST",
+        headers,
+        body,
+      });
+      if (!res.ok) {
+        console.log(
+          `${account.name}: GraphQL ${docId} failed (HTTP ${res.status})`,
+        );
+        continue;
+      }
+      const json = await res.json();
+      const conn =
+        json?.data?.xdt_api__v1__feed__user_timeline_graphql_connection ||
+        json?.data?.user?.edge_owner_to_timeline_media;
+      const edges = conn?.edges || [];
+      if (!edges.length) {
+        console.log(`${account.name}: GraphQL ${docId} returned 0 edges`);
+        continue;
+      }
+
+      const posts = [];
+      for (const edge of edges) {
+        const node = edge.node || edge;
+        // Newer queries return iphone_struct-shaped nodes; older return GraphImage nodes.
+        const post = node.shortcode
+          ? await buildPostFromNode(node, account)
+          : await buildPostFromIphoneStruct(node, account);
+        if (post) posts.push(post);
+      }
+      console.log(
+        `${account.name}: GraphQL timeline (${docId}) returned ${posts.length} matching posts`,
+      );
+      return { posts, ok: true };
+    } catch (err) {
+      console.log(`${account.name}: GraphQL ${docId} error (${err.message})`);
+    }
+  }
+
+  return { posts: [], ok: false };
 }
 
 function loadJsonArray(filePath) {
@@ -350,7 +483,7 @@ function saveFeedAndArchive(byId) {
 }
 
 // Walk a paginated Graph edge (e.g. /media or /collaborative_media) and collect posts.
-async function collectFromEdge(startUrl, account, posts) {
+async function collectFromEdge(startUrl, account, posts, options = {}) {
   let url = startUrl;
   while (url) {
     const res = await fetch(url);
@@ -360,10 +493,20 @@ async function collectFromEdge(startUrl, account, posts) {
     }
     const data = await res.json();
     for (const item of data.data || []) {
-      const post = await buildPost(item, account);
+      const post = await buildPost(item, account, options);
       if (post) posts.push(post);
     }
     url = data.paging?.next || null;
+  }
+}
+
+function shortApiError(err) {
+  const raw = String(err?.message || err || "");
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.error?.message || parsed?.message || raw.slice(0, 160);
+  } catch {
+    return raw.slice(0, 160);
   }
 }
 
@@ -373,15 +516,41 @@ async function fetchMediaForAccount(account) {
     return [];
   }
 
-  // The /media edge only returns posts this account AUTHORED. Instagram's simple
-  // "Instagram Login" API cannot fetch posts the account only collaborated on, so
-  // a collab post only appears here if THIS account is the original author.
   const posts = [];
+
+  // Own authored posts.
   const ownUrl = `https://graph.instagram.com/${account.userId}/media?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
   try {
-    await collectFromEdge(ownUrl, account, posts);
+    await collectFromEdge(ownUrl, account, posts, { collab: false });
+    console.log(`${account.name}: ${posts.length} posts from Graph API /media`);
   } catch (err) {
     throw new Error(`Instagram API error for ${account.name}: ${err.message}`);
+  }
+
+  // Official Collaborative Media API (Meta, 2026): media where this user is an
+  // accepted collaborator — this is how Amy's color posts should arrive without scraping.
+  const collabEndpoints = [
+    `https://graph.instagram.com/${account.userId}/collaborative_media`,
+    `https://graph.instagram.com/v22.0/${account.userId}/collaborative_media`,
+    `https://graph.facebook.com/v22.0/${account.userId}/collaborative_media`,
+  ];
+
+  for (const base of collabEndpoints) {
+    const url = `${base}?fields=${MEDIA_FIELDS}&limit=50&access_token=${account.token}`;
+    try {
+      const before = posts.length;
+      await collectFromEdge(url, account, posts, { collab: true });
+      const added = posts.length - before;
+      const host = base.includes("facebook.com") ? "facebook" : "instagram";
+      console.log(
+        `${account.name}: ${added} collab posts from ${host} /collaborative_media`,
+      );
+      break;
+    } catch (err) {
+      console.log(
+        `${account.name}: /collaborative_media not available yet (${shortApiError(err)})`,
+      );
+    }
   }
 
   return posts;
@@ -402,7 +571,7 @@ async function main() {
     if (account.scrapePublic) {
       scrapeAttempted = true;
       const scraped = await fetchPublicProfilePosts(account);
-      console.log(`${account.name}: ${scraped.posts.length} posts from public profile`);
+      console.log(`${account.name}: ${scraped.posts.length} posts from public/GraphQL profile`);
       if (!scraped.ok) scrapeFailed = true;
       for (const post of scraped.posts) add(post);
       await sleep(3000);
