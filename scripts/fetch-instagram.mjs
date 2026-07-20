@@ -420,10 +420,33 @@ async function main() {
   );
   console.log(`Wrote ${OUT_FILE} and ${ARCHIVE_FILE}`);
 
+  const statusPath = path.join(__dirname, "../logs/scrape-status.json");
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  fs.writeFileSync(
+    statusPath,
+    JSON.stringify(
+      {
+        ok: !scrapeFailed,
+        scrapeAttempted,
+        scrapeFailed,
+        at: new Date().toISOString(),
+        message: scrapeFailed
+          ? "Instagram blocked the public profile scrape. Adnan's own posts may still update via the API, but Amy collab / color posts need add-instagram-post.command until the scrape works again."
+          : "Public profile scrape succeeded.",
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
   if (scrapeAttempted && scrapeFailed) {
-    throw new Error(
-      "Instagram blocked the public profile scrape, so Amy collab / color posts may be missing. Use add-instagram-post.command to add the post manually, or try again later.",
-    );
+    // Warn loudly, but do NOT fail the process. GitHub Actions still needs to
+    // commit Graph API updates. A hard exit was turning every 2-hour run red
+    // and blocking those commits.
+    console.warn("");
+    console.warn("WARNING: Instagram blocked the public profile scrape (collab/color posts may be missing).");
+    console.warn("Adnan's Graph API posts were still saved. Use add-instagram-post.command for Amy's color posts if needed.");
+    console.warn("");
   }
 }
 

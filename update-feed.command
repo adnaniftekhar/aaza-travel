@@ -34,20 +34,24 @@ EXIT=$?
 
 echo ""
 if [ "$EXIT" -eq 0 ]; then
-  echo "Done! Give the site a minute, then refresh:"
-  echo "  https://aazaadventures.com"
-  echo ""
-  echo "Tip: hard-refresh with Cmd + Shift + R if you don't see new posts."
+  if [ -f logs/scrape-status.json ] && grep -q '"scrapeFailed": true' logs/scrape-status.json; then
+    echo "Finished, but Instagram blocked Amy collab/color scraping."
+    echo "Adnan's posts may still have updated."
+    echo ""
+    echo "To add a missing color post (like BROWN):"
+    echo "  double-click  add-instagram-post.command"
+    echo ""
+  else
+    echo "Done! Give the site a minute, then refresh:"
+    echo "  https://aazaadventures.com"
+    echo ""
+    echo "Tip: hard-refresh with Cmd + Shift + R if you don't see new posts."
+  fi
 else
-  echo "UPDATE FAILED — Instagram likely blocked the automatic fetch."
+  echo "UPDATE FAILED — see logs/feed-update.log"
   echo ""
-  echo "To add the BROWN (or any) post right now:"
-  echo "  1. Double-click  add-instagram-post.command"
-  echo "  2. Paste the Instagram link"
-  echo "  3. Paste the full caption (must start with BROWN: )"
-  echo "  4. Optionally choose the photo from Downloads"
-  echo ""
-  echo "Details: logs/feed-update.log"
+  echo "Backup for a missing color post:"
+  echo "  double-click  add-instagram-post.command"
 fi
 echo ""
 read -n 1 -s -r -p "Press any key to close..."

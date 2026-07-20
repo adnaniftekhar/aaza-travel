@@ -138,6 +138,23 @@ async function main() {
   run("node scripts/fetch-instagram.mjs");
   run("node scripts/fetch-blog.mjs");
   publishChanges();
+
+  const statusPath = path.join(repoRoot, "logs/scrape-status.json");
+  try {
+    const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
+    if (status.scrapeFailed) {
+      log(`WARNING: ${status.message}`);
+      console.log("");
+      console.log("==========================================");
+      console.log("  Instagram blocked collab/color scrape");
+      console.log("==========================================");
+      console.log("Adnan posts may still have updated.");
+      console.log("For Amy color posts, use: add-instagram-post.command");
+      console.log("");
+    }
+  } catch {
+    /* no status file */
+  }
 }
 
 main().catch((err) => {
