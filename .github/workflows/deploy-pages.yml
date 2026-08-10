@@ -3,9 +3,10 @@ name: Deploy site to GitHub Pages
 on:
   push:
     branches: [main]
-  workflow_run:
-    workflows: ["Update Instagram Feed", "Update Blog"]
-    types: [completed]
+  # Manual redeploy only. Do not also listen for workflow_run on the
+  # Instagram/Blog jobs: those already push to main, which triggers this
+  # workflow via push. Extra workflow_run deploys double the queue and
+  # previously left a stuck "waiting" run blocking all later deploys.
   workflow_dispatch:
 
 permissions:
@@ -14,12 +15,15 @@ permissions:
   id-token: write
 
 concurrency:
+  # Newest deploy wins. cancel-in-progress:false previously queued every
+  # Instagram/blog push behind a 4-day stuck environment wait, then cancelled.
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -38,9 +42,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        continue-on-error: true
-
-      - name: Retry deploy if needed
-        if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
-        id: deployment_retry
