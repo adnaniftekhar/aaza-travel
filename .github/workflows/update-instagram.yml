@@ -39,6 +39,15 @@ jobs:
             echo "No changes to feed.json"
           else
             git commit -m "Update Instagram feed"
-            git pull --rebase origin main
-            git push
+            # Retry rebase+push: other bots/pushes can land between pull and push.
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main
+              if git push; then
+                exit 0
+              fi
+              echo "Push rejected (attempt $i); retrying..."
+              sleep $((i * 2))
+            done
+            echo "Failed to push feed update after retries"
+            exit 1
           fi
