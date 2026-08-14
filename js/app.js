@@ -17,11 +17,15 @@ function formatDate(dateStr) {
   });
 }
 
-function getCurrentStop(stops, today) {
+function todayIso(today) {
   const y = today.getFullYear();
   const m = String(today.getMonth() + 1).padStart(2, "0");
   const d = String(today.getDate()).padStart(2, "0");
-  const day = `${y}-${m}-${d}`;
+  return `${y}-${m}-${d}`;
+}
+
+function getCurrentStop(stops, today) {
+  const day = todayIso(today);
   const matches = stops.filter((s) => day >= s.start && day <= s.end);
   if (!matches.length) return null;
   // Prefer the latest-starting overlap (more specific than a long parent range).
@@ -30,6 +34,30 @@ function getCurrentStop(stops, today) {
     if (s.start === best.start && s.end < best.end) return s;
     return best;
   });
+}
+
+function getNextStop(stops, today) {
+  const current = getCurrentStop(stops, today);
+  if (current) {
+    const idx = stops.findIndex(
+      (s) => s.city === current.city && s.start === current.start,
+    );
+    return idx >= 0 ? stops[idx + 1] || null : null;
+  }
+  const day = todayIso(today);
+  return stops.find((s) => s.start > day) || null;
+}
+
+function formatAuthorName(name) {
+  const raw = (name || "").trim();
+  if (!raw) return "";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function authorChip(name) {
+  const label = formatAuthorName(name);
+  if (!label) return "";
+  return `<span class="author-chip">${escapeHtml(label)}</span>`;
 }
 
 function renderInstagramLinks(containerId) {
@@ -45,18 +73,61 @@ function renderInstagramLinks(containerId) {
     </a>`;
 }
 
-function renderWhereBanner(containerId) {
+async function renderWhereBanner(containerId) {
   const el = document.getElementById(containerId);
   if (!el || typeof ITINERARY === "undefined") return;
 
-  const current = getCurrentStop(ITINERARY, new Date());
-  if (!current) {
+  const now = new Date();
+  const current = getCurrentStop(ITINERARY, now);
+  const next = getNextStop(ITINERARY, now);
+  if (!current && !next) {
     el.hidden = true;
     return;
   }
 
+  const [feed, archive] = await Promise.all([
+    loadJsonArray("js/feed.json"),
+    loadJsonArray("js/feed-archive.json"),
+  ]);
+  const posts = mergePostsById(feed, archive);
+  const usedIds = new Set();
+  const stop = current || next;
+  const photo = pickItineraryPhoto(stop, posts, usedIds, todayIso(now));
+  const mapUrl =
+    stop.lat != null && stop.lon != null
+      ? mapEmbedUrl(stop.lat, stop.lon, stop.mapPad || 0.35)
+      : "";
+
+  const heading = current
+    ? `We are in <strong>${escapeHtml(current.city)}</strong>`
+    : `Next stop: <strong>${escapeHtml(next.city)}</strong>`;
+  const place = current || next;
+  const dates = `${formatDate(place.start)} → ${formatDate(place.end)}`;
+  const nextLine =
+    current && next
+      ? `<p class="where-next">Next: <strong>${escapeHtml(next.city)}</strong> · ${formatDate(next.start)}</p>`
+      : "";
+
   el.hidden = false;
-  el.innerHTML = `We are in <strong>${escapeHtml(current.city)}, ${escapeHtml(current.country)}</strong> right now.`;
+  el.classList.add("where-card");
+  el.innerHTML = `
+    <div class="where-card-photo">
+      ${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(place.city)}">` : ""}
+    </div>
+    <div class="where-card-copy">
+      <p class="where-kicker">${current ? "Right now" : "Coming up"}</p>
+      <h2>${heading}</h2>
+      <p class="muted">${escapeHtml(place.city)}, ${escapeHtml(place.country)} · ${escapeHtml(dates)}</p>
+      ${nextLine}
+      <a class="where-link" href="itinerary.html">See the full itinerary →</a>
+    </div>
+    <div class="where-card-map">
+      ${
+        mapUrl
+          ? `<iframe class="itinerary-map" title="Map of ${escapeHtml(place.city)}" src="${mapUrl}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>`
+          : ""
+      }
+    </div>`;
 }
 
 function feedImageUrl(item) {
@@ -279,7 +350,7 @@ function renderFeed(containerId, items) {
     el.innerHTML = `
       <div class="feed-empty">
         <p>No Instagram posts yet.</p>
-        <p class="muted">Post on Instagram with a hashtag like <code>#AAZATravels</code> and it will show up here within a few hours.</p>
+        <p class="muted">Follow along on Instagram — new photos will show up here.</p>
         <div class="ig-links" style="justify-content:center"></div>
       </div>`;
     const links = el.querySelector(".ig-links");
@@ -394,8 +465,8 @@ function renderColorsFeed(containerId, items) {
   if (!items || items.length === 0) {
     el.innerHTML = `
       <div class="feed-empty">
-        <p>No color posts yet.</p>
-        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code>, <code>TURQUOISE BLUE:</code>, or <code>EYE:</code>, it will show up here automatically.</p>
+        <p>No color or theme posts yet.</p>
+        <p class="muted">Amy’s color and theme hunts will appear here.</p>
       </div>`;
     return;
   }
@@ -514,7 +585,7 @@ function renderBlog(containerId, posts) {
       <a class="blog-card-link" href="${escapeHtml(href)}">
         ${image}
         <div class="blog-card-body">
-          <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
+          <p class="meta">${authorChip(post.author)} <span>${formatDate(post.updated || post.date)}</span></p>
           <h2>${escapeHtml(post.title)}</h2>
           <p class="blog-excerpt">${escapeHtml(post.excerpt)}</p>
           <span class="view-ig">Read full post →</span>
@@ -525,12 +596,14 @@ function renderBlog(containerId, posts) {
     .join("");
 }
 
-async function loadBlog(containerId) {
+async function loadBlog(containerId, options) {
+  const limit = options && options.limit;
   try {
     const res = await fetch(`js/blog.json?v=${Date.now()}`);
     if (!res.ok) throw new Error("Blog not found");
     const posts = await res.json();
-    renderBlog(containerId, posts);
+    const list = Array.isArray(posts) ? posts : [];
+    renderBlog(containerId, typeof limit === "number" ? list.slice(0, limit) : list);
   } catch {
     renderBlog(containerId, []);
   }
@@ -595,7 +668,7 @@ function renderBlogPost(containerId, post) {
       <a class="post-back" href="blog.html">← Journal</a>
       ${image}
       <div class="post-content">
-        <p class="meta">${escapeHtml(post.author || "")} · ${formatDate(post.updated || post.date)}</p>
+        <p class="meta">${authorChip(post.author)} <span>${formatDate(post.updated || post.date)}</span></p>
         <h1>${escapeHtml(post.title)}</h1>
         <div class="post-body-wrap">
           <div class="post-body">${bodyHtml}</div>
@@ -814,9 +887,9 @@ async function renderItinerary(containerId, stops) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  const current = getCurrentStop(stops, new Date());
-  const today = new Date();
-  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  const current = getCurrentStop(stops, now);
+  const day = todayIso(now);
 
   const [feed, archive] = await Promise.all([
     loadJsonArray("js/feed.json"),
@@ -833,7 +906,7 @@ async function renderItinerary(containerId, stops) {
         stop.lat != null && stop.lon != null
           ? mapEmbedUrl(stop.lat, stop.lon, stop.mapPad || 0.35)
           : "";
-      const photo = pickItineraryPhoto(stop, posts, usedIds, todayIso);
+      const photo = pickItineraryPhoto(stop, posts, usedIds, day);
 
       return `
     <article class="itinerary-stop card ${isHere ? "current" : ""}">

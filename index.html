@@ -14,7 +14,7 @@
       <a class="logo" href="index.html">AAZA Travels</a>
       <nav>
         <a href="index.html" class="active">Home</a>
-        <a href="blog.html">Blog</a>
+        <a href="blog.html">Journal</a>
         <a href="colors.html">Colors/Themes</a>
         <a href="itinerary.html">Itinerary</a>
       </nav>
@@ -34,12 +34,18 @@
   <main>
     <section>
       <div class="section-header">
+        <h2>Latest from the journal</h2>
+        <a class="section-more" href="blog.html">All journal posts →</a>
+      </div>
+      <p class="muted" style="margin-bottom:1.25rem">Stories from the road, written by Zarmina and Ayana.</p>
+      <div id="home-journal" class="home-journal"></div>
+    </section>
+
+    <section>
+      <div class="section-header">
         <h2>Instagram</h2>
         <div id="ig-links" class="ig-links"></div>
       </div>
-      <p class="hashtag-hint">
-        Posts tagged with <code>#AAZATravels</code>, <code>#AAZAadventures</code>, and location tags like <code>#AAZAParis</code> appear here automatically.
-      </p>
       <div id="feed" class="feed-grid" style="margin-top:1.25rem"></div>
     </section>
   </main>
@@ -59,6 +65,7 @@
     renderInstagramLinks("ig-links");
     renderInstagramLinks("footer-ig-links");
     renderWhereBanner("where-banner");
+    loadBlog("home-journal", { limit: 3 });
     loadInstagramFeed("feed");
   </script>
 </body>
