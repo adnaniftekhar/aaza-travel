@@ -720,11 +720,110 @@ function mapEmbedUrl(lat, lon, pad = 0.35) {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
 }
 
-function renderItinerary(containerId, stops) {
+const ITINERARY_PLACE_WORDS = {
+  Paris: ["paris"],
+  Marseille: ["marseille", "panier", "calanques"],
+  Toulouse: ["toulouse"],
+  Bordeaux: ["bordeaux", "moissac"],
+  "Saint-Jean-de-Luz": [
+    "saint-jean-de-luz",
+    "saint jean de luz",
+    "guéthary",
+    "guethary",
+    "biarritz",
+    "san sebastián",
+    "san sebastian",
+    "ibardin",
+    "basque",
+  ],
+  Edinburgh: ["edinburgh", "royal mile", "tron kirk"],
+  Cruachan: ["cruachan", "loch tay", "killin", "glamping"],
+  Glencoe: ["glencoe", "glen coe"],
+  Aviemore: ["aviemore", "viaduct", "hogwarts"],
+  Inverness: ["inverness", "kelpies"],
+};
+
+const FAMILY_PHOTO_WORDS =
+  /ayana|zarmina|adnan|amy|girls|daughters|family|kids|we stayed|our airbnb|our lovely/i;
+
+function isColorThemeCaption(caption) {
+  return Boolean(parseColorFromCaption(caption));
+}
+
+function postDay(item) {
+  const raw = item.date || item.timestamp || "";
+  return raw.slice(0, 10);
+}
+
+function addDays(iso, n) {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function scoreItineraryPhoto(stop, item) {
+  const img = feedImageUrl(item);
+  if (!img) return -1;
+  const caption = item.caption || "";
+  if (isColorThemeCaption(caption)) return -1;
+
+  const day = postDay(item);
+  if (!day) return -1;
+
+  const windowStart = addDays(stop.start, -1);
+  const windowEnd = addDays(stop.end, 6);
+  const inWindow = day >= windowStart && day <= windowEnd;
+
+  const words = ITINERARY_PLACE_WORDS[stop.city] || [stop.city.toLowerCase()];
+  const lower = caption.toLowerCase();
+  const mentionsPlace = words.some((w) => lower.includes(w));
+
+  if (!inWindow && !mentionsPlace) return -1;
+
+  let score = 0;
+  if (inWindow) score += 40;
+  if (mentionsPlace) score += 80;
+  if (item.mediaType === "IMAGE") score += 35;
+  if (FAMILY_PHOTO_WORDS.test(caption)) score += 50;
+  if (item.author === "Amy") score += 15;
+  return score;
+}
+
+function pickItineraryPhoto(stop, feed, usedIds, todayIso) {
+  if (stop.start > todayIso) return stop.image || "";
+
+  let best = null;
+  let bestScore = 0;
+  for (const item of feed) {
+    if (usedIds.has(item.id)) continue;
+    const score = scoreItineraryPhoto(stop, item);
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+  if (!best) return stop.image || "";
+  usedIds.add(best.id);
+  return feedImageUrl(best);
+}
+
+async function renderItinerary(containerId, stops) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
   const current = getCurrentStop(stops, new Date());
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const [feed, archive] = await Promise.all([
+    loadJsonArray("js/feed.json"),
+    loadJsonArray("js/feed-archive.json"),
+  ]);
+  const posts = mergePostsById(feed, archive);
+  const usedIds = new Set();
 
   el.innerHTML = stops
     .map((stop) => {
@@ -734,6 +833,7 @@ function renderItinerary(containerId, stops) {
         stop.lat != null && stop.lon != null
           ? mapEmbedUrl(stop.lat, stop.lon, stop.mapPad || 0.35)
           : "";
+      const photo = pickItineraryPhoto(stop, posts, usedIds, todayIso);
 
       return `
     <article class="itinerary-stop card ${isHere ? "current" : ""}">
@@ -746,8 +846,8 @@ function renderItinerary(containerId, stops) {
       </div>
       <div class="itinerary-stop-photo">
         ${
-          stop.image
-            ? `<img src="${escapeHtml(stop.image)}" alt="${escapeHtml(stop.city)}" loading="lazy">`
+          photo
+            ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(stop.city)}" loading="lazy">`
             : ""
         }
       </div>

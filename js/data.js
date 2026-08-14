@@ -130,6 +130,15 @@ const ITINERARY = [
     lon: -4.2247,
   },
   {
+    city: "Edinburgh",
+    country: "Scotland",
+    start: "2026-08-15",
+    end: "2026-08-23",
+    image: "photos/itinerary/edinburgh.jpg",
+    lat: 55.9533,
+    lon: -3.1883,
+  },
+  {
     city: "York",
     country: "England",
     start: "2026-08-23",
