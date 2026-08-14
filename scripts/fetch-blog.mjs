@@ -8,7 +8,19 @@ const OUT_FILE = path.join(__dirname, "../js/blog.json");
 // Public Blogger blog. No API key needed for the public feed.
 const BLOG_URL =
   process.env.BLOGGER_URL || "https://aazaadventures.blogspot.com";
-const FEED_URL = `${BLOG_URL.replace(/\/$/, "")}/feeds/posts/default?alt=json&max-results=50`;
+const PAGE_SIZE = 500;
+
+function feedPageUrl(startIndex) {
+  const base = `${BLOG_URL.replace(/\/$/, "")}/feeds/posts/default`;
+  const params = new URLSearchParams({
+    alt: "json",
+    "max-results": String(PAGE_SIZE),
+    "start-index": String(startIndex),
+    // Blogger otherwise defaults to roughly the last 30 days.
+    "published-min": "1970-01-01T00:00:00",
+  });
+  return `${base}?${params.toString()}`;
+}
 
 function decodeEntities(html) {
   return html
@@ -154,42 +166,77 @@ function cleanBodyHtml(html) {
   return parts.join("\n");
 }
 
-async function main() {
-  const res = await fetch(FEED_URL, {
-    headers: { "User-Agent": "Mozilla/5.0 (AAZA Travel site)" },
-  });
+function mapEntry(e) {
+  const html = e.content?.$t || e.summary?.$t || "";
+  const text = stripHtml(html);
+  const rawTitle = e.title?.$t || "";
+  const link =
+    (e.link || []).find((l) => l.rel === "alternate")?.href || BLOG_URL;
+  const image = firstImage(html) || e["media$thumbnail"]?.url || "";
 
-  if (!res.ok) {
-    throw new Error(`Blogger feed error: ${res.status} ${await res.text()}`);
+  return {
+    id: e.id?.$t || link,
+    slug: slugFromLink(link),
+    title: deriveTitle(rawTitle, text),
+    excerpt: text.slice(0, 240),
+    body: cleanBodyHtml(html),
+    image,
+    orientation: imageOrientation(html, image),
+    link,
+    author: e.author?.[0]?.name?.$t || "Amy",
+    date: e.published?.$t || "",
+    updated: e.updated?.$t || e.published?.$t || "",
+  };
+}
+
+function loadExistingPosts() {
+  try {
+    const data = JSON.parse(fs.readFileSync(OUT_FILE, "utf8"));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchAllEntries() {
+  const entries = [];
+  let start = 1;
+  let total = Infinity;
+
+  while (start <= total) {
+    const res = await fetch(feedPageUrl(start), {
+      headers: { "User-Agent": "Mozilla/5.0 (AAZA Travel site)" },
+    });
+    if (!res.ok) {
+      throw new Error(`Blogger feed error: ${res.status} ${await res.text()}`);
+    }
+    const data = await res.json();
+    const page = data.feed?.entry || [];
+    total = Number(data.feed?.["openSearch$totalResults"]?.$t || page.length);
+    entries.push(...page);
+    if (!page.length) break;
+    start += page.length;
   }
 
-  const data = await res.json();
-  const entries = data.feed?.entry || [];
+  return entries;
+}
 
-  const posts = entries.map((e) => {
-    const html = e.content?.$t || e.summary?.$t || "";
-    const text = stripHtml(html);
-    const rawTitle = e.title?.$t || "";
-    const link =
-      (e.link || []).find((l) => l.rel === "alternate")?.href || BLOG_URL;
-    const image = firstImage(html) || e["media$thumbnail"]?.url || "";
+async function main() {
+  const entries = await fetchAllEntries();
+  const byId = new Map();
 
-    return {
-      id: e.id?.$t || link,
-      slug: slugFromLink(link),
-      title: deriveTitle(rawTitle, text),
-      excerpt: text.slice(0, 240),
-      body: cleanBodyHtml(html),
-      image,
-      orientation: imageOrientation(html, image),
-      link,
-      author: e.author?.[0]?.name?.$t || "Amy",
-      date: e.published?.$t || "",
-      updated: e.updated?.$t || e.published?.$t || "",
-    };
-  });
+  // Keep any older posts we already saved, in case Blogger omits them later.
+  for (const post of loadExistingPosts()) {
+    if (post?.id) byId.set(post.id, post);
+  }
+  for (const entry of entries) {
+    const post = mapEntry(entry);
+    byId.set(post.id, post);
+  }
 
-  posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+  const posts = [...byId.values()].sort(
+    (a, b) => new Date(b.date) - new Date(a.date),
+  );
 
   fs.writeFileSync(OUT_FILE, JSON.stringify(posts, null, 2) + "\n");
   console.log(`Wrote ${posts.length} blog posts to ${OUT_FILE}`);
