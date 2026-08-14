@@ -273,21 +273,46 @@ async function fetchPublicProfilePosts(account) {
   return { posts: [], ok: false };
 }
 
-function igWebHeaders(account) {
+function igWebHeaders(account, extra = {}) {
   const headers = {
     "X-IG-App-ID": "936619743392459",
+    Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
     "User-Agent":
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     Referer: `https://www.instagram.com/${account.username}/`,
     "X-Requested-With": "XMLHttpRequest",
+    ...extra,
   };
   if (IG_SESSIONID) {
     const parts = [`sessionid=${IG_SESSIONID}`];
     if (IG_DS_USER_ID) parts.push(`ds_user_id=${IG_DS_USER_ID}`);
+    if (extra.Cookie) parts.push(extra.Cookie);
     headers.Cookie = parts.join("; ");
-    headers["X-CSRFToken"] = "missing";
   }
   return headers;
+}
+
+async function fetchInstagramCsrf() {
+  try {
+    const res = await fetch("https://www.instagram.com/", {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      },
+      redirect: "follow",
+    });
+    const setCookie = res.headers.getSetCookie?.() || [];
+    const joined = setCookie.join("; ");
+    const csrf =
+      /csrftoken=([^;]+)/.exec(joined)?.[1] ||
+      /csrftoken=([^;]+)/.exec(res.headers.get("set-cookie") || "")?.[1] ||
+      "";
+    const mid = /mid=([^;]+)/.exec(joined)?.[1] || "";
+    return { csrf, cookie: [csrf && `csrftoken=${csrf}`, mid && `mid=${mid}`].filter(Boolean).join("; ") };
+  } catch {
+    return { csrf: "", cookie: "" };
+  }
 }
 
 async function fetchWebProfileInfo(account) {
@@ -359,11 +384,13 @@ async function buildPostFromIphoneStruct(media, profileAccount) {
 async function fetchGraphqlProfilePosts(account) {
   // PolarisProfilePostsQuery / user timeline — current Instagram web client query.
   const docIds = ["34579740524958711", "7898261790222653", "7950326061742207"];
-  const headers = {
-    ...igWebHeaders(account),
+  const { csrf, cookie } = await fetchInstagramCsrf();
+  const headers = igWebHeaders(account, {
     "Content-Type": "application/x-www-form-urlencoded",
-    "X-FB-LSD": "AVqbxe3J_YA",
-  };
+    "X-CSRFToken": csrf || "0",
+    ...(cookie ? { Cookie: cookie } : {}),
+  });
+  if (csrf) headers["X-CSRFToken"] = csrf;
 
   for (const docId of docIds) {
     const variables = {
