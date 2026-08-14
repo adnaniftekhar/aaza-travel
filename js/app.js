@@ -92,7 +92,9 @@ async function renderWhereBanner(containerId) {
   const posts = mergePostsById(feed, archive);
   const usedIds = new Set();
   const stop = current || next;
-  const photo = pickItineraryPhoto(stop, posts, usedIds, todayIso(now));
+  const photo = current
+    ? "photos/hero.jpg"
+    : pickItineraryPhoto(stop, posts, usedIds, todayIso(now));
   const mapUrl =
     stop.lat != null && stop.lon != null
       ? mapEmbedUrl(stop.lat, stop.lon, stop.mapPad || 0.35)
@@ -906,7 +908,8 @@ async function renderItinerary(containerId, stops) {
         stop.lat != null && stop.lon != null
           ? mapEmbedUrl(stop.lat, stop.lon, stop.mapPad || 0.35)
           : "";
-      const photo = pickItineraryPhoto(stop, posts, usedIds, day);
+      let photo = pickItineraryPhoto(stop, posts, usedIds, day);
+      if (isHere) photo = "photos/hero.jpg";
 
       return `
     <article class="itinerary-stop card ${isHere ? "current" : ""}">

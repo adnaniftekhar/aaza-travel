@@ -137,8 +137,8 @@ nav a.active {
 .hero {
   align-items: flex-end;
   background:
-    linear-gradient(var(--hero-overlay), var(--hero-overlay)),
-    url("../photos/hero.jpg") center 80% / cover no-repeat,
+    linear-gradient(to top, rgba(44, 36, 22, 0.72) 0%, rgba(44, 36, 22, 0.22) 50%, rgba(44, 36, 22, 0.18) 100%),
+    url("../photos/hero.jpg") center 42% / cover no-repeat,
     linear-gradient(135deg, #c4a574 0%, #8b5a2b 100%);
   color: white;
   display: flex;
@@ -329,6 +329,7 @@ section {
   display: block;
   height: 220px;
   object-fit: cover;
+  object-position: center 40%;
   width: 100%;
 }
 
