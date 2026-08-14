@@ -18,8 +18,18 @@ function formatDate(dateStr) {
 }
 
 function getCurrentStop(stops, today) {
-  const day = today.toISOString().slice(0, 10);
-  return stops.find((s) => day >= s.start && day <= s.end) || null;
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const day = `${y}-${m}-${d}`;
+  const matches = stops.filter((s) => day >= s.start && day <= s.end);
+  if (!matches.length) return null;
+  // Prefer the latest-starting overlap (more specific than a long parent range).
+  return matches.reduce((best, s) => {
+    if (s.start > best.start) return s;
+    if (s.start === best.start && s.end < best.end) return s;
+    return best;
+  });
 }
 
 function renderInstagramLinks(containerId) {

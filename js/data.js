@@ -106,7 +106,7 @@ const ITINERARY = [
     city: "Glencoe",
     country: "Scotland",
     start: "2026-08-09",
-    end: "2026-08-15",
+    end: "2026-08-11",
     image: "photos/itinerary/glencoe.jpg",
     lat: 56.6826,
     lon: -5.1024,
