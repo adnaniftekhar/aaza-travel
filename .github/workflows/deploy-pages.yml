@@ -3,11 +3,13 @@ name: Deploy site to GitHub Pages
 on:
   push:
     branches: [main]
-  # Manual redeploy only. Do not also listen for workflow_run on the
-  # Instagram/Blog jobs: those already push to main, which triggers this
-  # workflow via push. Extra workflow_run deploys double the queue and
-  # previously left a stuck "waiting" run blocking all later deploys.
+  # Bot commits from Update Instagram / Update Blog use GITHUB_TOKEN, which
+  # does NOT trigger this workflow via `push`. Those jobs explicitly dispatch
+  # us instead. This schedule is a safety net if a dispatch is skipped.
+  schedule:
+    - cron: "20 */2 * * *"
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
