@@ -60,6 +60,7 @@ function feedImageUrl(item) {
 }
 
 const COLOR_WORDS = [
+  "EYE",
   "YELLOW",
   "ORANGE",
   "GREEN",
@@ -384,7 +385,7 @@ function renderColorsFeed(containerId, items) {
     el.innerHTML = `
       <div class="feed-empty">
         <p>No color posts yet.</p>
-        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code> or <code>TURQUOISE BLUE:</code>, it will show up here automatically.</p>
+        <p class="muted">When Amy posts on Instagram with a caption like <code>YELLOW:</code>, <code>TURQUOISE BLUE:</code>, or <code>EYE:</code>, it will show up here automatically.</p>
       </div>`;
     return;
   }

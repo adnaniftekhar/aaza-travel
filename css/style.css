@@ -418,7 +418,7 @@ section {
   margin-top: 0.5rem;
 }
 
-/* Color Hunt page */
+/* Colors / Themes page */
 
 .colors-intro {
   margin: 0.5rem 0 0;
@@ -486,6 +486,13 @@ section {
   top: 0.75rem;
   white-space: nowrap;
   z-index: 1;
+}
+
+.color-chip--eye,
+.color-card--eye .color-badge {
+  background: radial-gradient(circle at 42% 38%, #f4e8c8 0 18%, #5b8ec9 19% 42%, #1a2744 43% 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 .color-chip--yellow,
