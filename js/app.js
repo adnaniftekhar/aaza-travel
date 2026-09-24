@@ -816,6 +816,17 @@ const ITINERARY_PLACE_WORDS = {
   Glencoe: ["glencoe", "glen coe"],
   Aviemore: ["aviemore", "viaduct", "hogwarts"],
   Inverness: ["inverness", "kelpies"],
+  Istanbul: ["istanbul", "bosphorus", "hagia sophia"],
+  Cappadocia: ["cappadocia", "göreme", "goreme", "balloon"],
+  "Northern Georgia": [
+    "northern georgia",
+    "kazbegi",
+    "stepantsminda",
+    "svaneti",
+    "mestia",
+  ],
+  Tbilisi: ["tbilisi"],
+  Sardinia: ["sardinia", "san teodoro", "nuragic"],
 };
 
 const FAMILY_PHOTO_WORDS =
