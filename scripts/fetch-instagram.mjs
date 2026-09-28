@@ -551,7 +551,15 @@ async function fetchMediaForAccount(account) {
     await collectFromEdge(ownUrl, account, posts, { collab: false });
     console.log(`${account.name}: ${posts.length} posts from Graph API /media`);
   } catch (err) {
-    throw new Error(`Instagram API error for ${account.name}: ${err.message}`);
+    // Expired / invalid tokens must not fail the whole CI job every 2 hours.
+    // Public scrape above still keeps the feed moving.
+    console.warn(
+      `WARNING: Instagram Graph API failed for ${account.name}: ${shortApiError(err)}`,
+    );
+    console.warn(
+      `Renew the long-lived token and update the INSTAGRAM_ACCESS_TOKEN secret on GitHub.`,
+    );
+    return posts;
   }
 
   // Official Collaborative Media API (Meta, 2026): media where this user is an
