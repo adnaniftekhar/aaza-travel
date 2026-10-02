@@ -827,6 +827,11 @@ const ITINERARY_PLACE_WORDS = {
   ],
   Tbilisi: ["tbilisi"],
   Sardinia: ["sardinia", "san teodoro", "nuragic"],
+  Japan: ["japan", "tokyo", "kyoto", "osaka"],
+  Vietnam: ["vietnam", "hanoi", "ho chi minh", "saigon", "da nang", "danang"],
+  Tanzania: ["tanzania", "serengeti", "kilimanjaro", "ngorongoro"],
+  Portugal: ["portugal", "lisbon", "lisboa", "porto", "algarve"],
+  Valencia: ["valencia"],
 };
 
 const FAMILY_PHOTO_WORDS =
