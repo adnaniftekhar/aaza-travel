@@ -54,10 +54,25 @@ function formatAuthorName(name) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+function normalizeAuthor(name) {
+  return (name || "").trim().toLowerCase();
+}
+
 function authorChip(name) {
   const label = formatAuthorName(name);
   if (!label) return "";
   return `<span class="author-chip">${escapeHtml(label)}</span>`;
+}
+
+const JOURNAL_AUTHOR_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "ayana", label: "Ayana" },
+  { id: "zarmina", label: "Zarmina" },
+];
+
+function postMatchesAuthorFilter(post, filter) {
+  if (!filter || filter === "all") return true;
+  return normalizeAuthor(post.author) === filter;
 }
 
 function renderInstagramLinks(containerId) {
@@ -143,7 +158,6 @@ function feedImageUrl(item) {
 }
 
 const COLOR_WORDS = [
-  "EYE",
   "YELLOW",
   "ORANGE",
   "GREEN",
@@ -209,6 +223,23 @@ const COLOR_WORDS = [
   "SKY",
   "BABY",
 ];
+
+// Non-color ALL-CAPS labels Amy uses before a colon (FOOD:, PATTERNS:, EYE:).
+// Kept explicit so motif hunts never get folded into the Colors page.
+const KNOWN_THEME_LABELS = new Set([
+  "FOOD",
+  "PATTERNS",
+  "STREET ART",
+  "CATS",
+  "DOGS",
+  "EYE",
+  "OVERGROWN GREEN",
+  "DOORS",
+  "TEXTURES",
+  "SPIRALS",
+  "BALCONIES",
+  "MARKETS",
+]);
 
 const COLOR_WORD_RE = COLOR_WORDS.join("|");
 const COLOR_POST_RE = new RegExp(
@@ -324,6 +355,42 @@ function filterColorPosts(items) {
   return (items || [])
     .filter((item) => parseColorFromCaption(item.caption))
     .sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
+}
+
+// Theme posts use an ALL-CAPS label before a colon (FOOD:, PATTERNS:, STREET ART:),
+// and are not color hunts.
+const THEME_POST_RE = /^([A-Z][A-Z0-9]*(?:\s+[A-Z][A-Z0-9]*){0,5})\s*:/;
+
+function parseThemeFromCaption(caption) {
+  const text = (caption || "").trim();
+  if (!text || parseColorFromCaption(text)) return "";
+  const match = text.match(THEME_POST_RE);
+  if (!match) return "";
+  const label = match[1].replace(/\s+/g, " ").toUpperCase();
+  // Prefer known motif labels; still accept any other ALL-CAPS prefix that
+  // is not a color (so new themes Amy invents show up automatically).
+  if (KNOWN_THEME_LABELS.has(label)) return label;
+  // Ignore short accidental ALL-CAPS words that are not motifs.
+  if (label.length < 3) return "";
+  return label;
+}
+
+function themeCaptionText(caption, theme) {
+  if (!theme) return caption || "";
+  const escaped = theme.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const prefix = new RegExp(`^${escaped}\\s*:\\s*`, "i");
+  return (caption || "").replace(prefix, "").trim();
+}
+
+function filterThemePosts(items) {
+  return (items || [])
+    .filter((item) => parseThemeFromCaption(item.caption))
+    .sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
+}
+
+function postMatchesThemeFilter(label, filter) {
+  if (!filter || filter === "ALL") return true;
+  return (label || "").toUpperCase() === filter;
 }
 
 function feedCardMedia(item, caption) {
@@ -467,8 +534,8 @@ function renderColorsFeed(containerId, items) {
   if (!items || items.length === 0) {
     el.innerHTML = `
       <div class="feed-empty">
-        <p>No color or theme posts yet.</p>
-        <p class="muted">Amy’s color and theme hunts will appear here.</p>
+        <p>No color posts yet.</p>
+        <p class="muted">Amy’s color hunts will appear here.</p>
       </div>`;
     return;
   }
@@ -523,6 +590,105 @@ async function loadColorsPage(feedId, paletteId) {
   paint();
 }
 
+function renderThemePalette(containerId, items, activeFilter, onFilter) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const themes = [
+    ...new Set(items.map((item) => parseThemeFromCaption(item.caption))),
+  ]
+    .filter(Boolean)
+    .sort();
+
+  if (themes.length === 0) {
+    el.hidden = true;
+    return;
+  }
+
+  el.hidden = false;
+  const chips = [
+    `<button type="button" class="color-chip color-chip--all${
+      !activeFilter || activeFilter === "ALL" ? " is-active" : ""
+    }" data-theme="ALL">All</button>`,
+    ...themes.map((theme) => {
+      const active = activeFilter === theme ? " is-active" : "";
+      return `<button type="button" class="color-chip theme-chip theme-chip--${colorSlug(
+        theme,
+      )}${active}" data-theme="${escapeHtml(theme)}">${escapeHtml(theme)}</button>`;
+    }),
+  ];
+  el.innerHTML = chips.join("");
+
+  el.querySelectorAll(".color-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const next = chip.getAttribute("data-theme") || "ALL";
+      onFilter(next === activeFilter ? "ALL" : next);
+    });
+  });
+}
+
+function renderThemesFeed(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!items || items.length === 0) {
+    el.innerHTML = `
+      <div class="feed-empty">
+        <p>No theme posts yet.</p>
+        <p class="muted">Amy’s theme collections — food, patterns, street art, and more — will appear here.</p>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = items
+    .map((item) => {
+      const href = item.permalink || "#";
+      const theme = parseThemeFromCaption(item.caption);
+      const caption = themeCaptionText(item.caption, theme);
+      const author = item.author || "";
+      const date = item.date || item.timestamp || "";
+      const themeClass = theme ? ` theme-card--${colorSlug(theme)}` : "";
+
+      return `
+    <a class="feed-card color-card theme-card${themeClass}" href="${escapeHtml(href)}" target="_blank" rel="noopener">
+      ${theme ? `<span class="color-badge theme-badge">${escapeHtml(theme)}</span>` : ""}
+      ${feedCardMedia(item, caption)}
+      <div class="feed-card-body">
+        <p class="meta">${escapeHtml(author)} · ${formatDate(date)}</p>
+        <p class="caption">${escapeHtml(caption)}</p>
+        <span class="view-ig">View on Instagram →</span>
+      </div>
+    </a>`;
+    })
+    .join("");
+}
+
+async function loadThemesPage(feedId, paletteId) {
+  const [feed, archive] = await Promise.all([
+    loadJsonArray("js/feed.json"),
+    loadJsonArray("js/feed-archive.json"),
+  ]);
+
+  const themePosts = filterThemePosts(mergePostsById(feed, archive));
+  let activeFilter = "ALL";
+
+  function paint() {
+    const visible =
+      activeFilter === "ALL"
+        ? themePosts
+        : themePosts.filter((item) =>
+            postMatchesThemeFilter(parseThemeFromCaption(item.caption), activeFilter),
+          );
+    renderThemePalette(paletteId, themePosts, activeFilter, (next) => {
+      activeFilter = next;
+      paint();
+    });
+    renderThemesFeed(feedId, visible);
+  }
+
+  paint();
+}
+
 async function loadInstagramFeed(containerId) {
   const [auto, manual] = await Promise.all([
     loadJsonArray("js/feed.json"),
@@ -570,8 +736,8 @@ function renderBlog(containerId, posts) {
   if (!posts || posts.length === 0) {
     el.innerHTML = `
       <div class="feed-empty">
-        <p>No blog posts yet.</p>
-        <p class="muted">New posts from our journal will appear here automatically.</p>
+        <p>No journal posts match this filter.</p>
+        <p class="muted">Try another author, or check back soon for new stories.</p>
       </div>`;
     return;
   }
@@ -598,15 +764,69 @@ function renderBlog(containerId, posts) {
     .join("");
 }
 
+function renderJournalAuthorFilter(containerId, activeFilter, onFilter) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  el.innerHTML = JOURNAL_AUTHOR_FILTERS.map((filter) => {
+    const active = activeFilter === filter.id ? " is-active" : "";
+    return `<button type="button" class="journal-filter-chip${active}" data-author="${escapeHtml(
+      filter.id,
+    )}">${escapeHtml(filter.label)}</button>`;
+  }).join("");
+
+  el.querySelectorAll(".journal-filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const next = chip.getAttribute("data-author") || "all";
+      onFilter(next);
+    });
+  });
+}
+
+function readAuthorFilterFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = (params.get("author") || "all").toLowerCase();
+  return JOURNAL_AUTHOR_FILTERS.some((f) => f.id === raw) ? raw : "all";
+}
+
+function writeAuthorFilterToUrl(filter) {
+  const url = new URL(window.location.href);
+  if (!filter || filter === "all") url.searchParams.delete("author");
+  else url.searchParams.set("author", filter);
+  window.history.replaceState({}, "", url);
+}
+
 async function loadBlog(containerId, options) {
   const limit = options && options.limit;
+  const filterId = options && options.filterId;
   try {
     const res = await fetch(`js/blog.json?v=${Date.now()}`);
     if (!res.ok) throw new Error("Blog not found");
     const posts = await res.json();
     const list = Array.isArray(posts) ? posts : [];
-    renderBlog(containerId, typeof limit === "number" ? list.slice(0, limit) : list);
+
+    if (!filterId) {
+      renderBlog(containerId, typeof limit === "number" ? list.slice(0, limit) : list);
+      return;
+    }
+
+    let activeFilter = readAuthorFilterFromUrl();
+
+    function paint() {
+      const filtered = list.filter((post) => postMatchesAuthorFilter(post, activeFilter));
+      const visible =
+        typeof limit === "number" ? filtered.slice(0, limit) : filtered;
+      renderJournalAuthorFilter(filterId, activeFilter, (next) => {
+        activeFilter = next;
+        writeAuthorFilterToUrl(next);
+        paint();
+      });
+      renderBlog(containerId, visible);
+    }
+
+    paint();
   } catch {
+    if (filterId) renderJournalAuthorFilter(filterId, "all", () => {});
     renderBlog(containerId, []);
   }
 }
@@ -642,7 +862,27 @@ function applyPostOrientation(article, img) {
   article.classList.toggle("post--landscape", !isPortrait);
 }
 
-function renderBlogPost(containerId, post) {
+function blogNavHtml(prevPost, nextPost) {
+  const older = prevPost
+    ? `<a class="post-nav-link post-nav-link--prev" href="${escapeHtml(blogPostUrl(prevPost))}">
+        <span class="post-nav-dir">← Previous</span>
+        <span class="post-nav-title">${escapeHtml(prevPost.title)}</span>
+        ${prevPost.author ? `<span class="post-nav-author">${escapeHtml(formatAuthorName(prevPost.author))}</span>` : ""}
+      </a>`
+    : `<span class="post-nav-link post-nav-link--prev is-empty"></span>`;
+
+  const newer = nextPost
+    ? `<a class="post-nav-link post-nav-link--next" href="${escapeHtml(blogPostUrl(nextPost))}">
+        <span class="post-nav-dir">Next →</span>
+        <span class="post-nav-title">${escapeHtml(nextPost.title)}</span>
+        ${nextPost.author ? `<span class="post-nav-author">${escapeHtml(formatAuthorName(nextPost.author))}</span>` : ""}
+      </a>`
+    : `<span class="post-nav-link post-nav-link--next is-empty"></span>`;
+
+  return `<nav class="post-nav" aria-label="Nearby journal posts">${older}${newer}</nav>`;
+}
+
+function renderBlogPost(containerId, post, neighbors) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -664,6 +904,8 @@ function renderBlogPost(containerId, post) {
       </figure>`
     : "";
   const bodyHtml = post.body || `<p>${escapeHtml(post.excerpt || "")}</p>`;
+  const prevPost = neighbors && neighbors.prev;
+  const nextPost = neighbors && neighbors.next;
 
   el.innerHTML = `
     <article class="post ${layoutClass}">
@@ -680,6 +922,7 @@ function renderBlogPost(containerId, post) {
           Also on
           <a href="${escapeHtml(post.link)}" target="_blank" rel="noopener">Blogger</a>
         </p>
+        ${blogNavHtml(prevPost, nextPost)}
       </div>
     </article>`;
 
@@ -714,11 +957,29 @@ async function loadBlogPost(containerId) {
     const res = await fetch(`js/blog.json?v=${Date.now()}`);
     if (!res.ok) throw new Error("Blog not found");
     const posts = await res.json();
-    const post = findBlogPost(posts, key);
+    const list = Array.isArray(posts) ? posts : [];
+    const post = findBlogPost(list, key);
     if (post && post.title) {
       document.title = `${post.title} — AAZA Travels`;
     }
-    renderBlogPost(containerId, post);
+
+    // blog.json is newest-first: previous = older (index+1), next = newer (index-1)
+    const index = post
+      ? list.findIndex(
+          (item) =>
+            (item.slug && item.slug === post.slug) ||
+            (item.id && item.id === post.id),
+        )
+      : -1;
+    const neighbors =
+      index >= 0
+        ? {
+            prev: list[index + 1] || null,
+            next: list[index - 1] || null,
+          }
+        : { prev: null, next: null };
+
+    renderBlogPost(containerId, post, neighbors);
   } catch {
     if (el) {
       el.innerHTML = `
@@ -838,7 +1099,7 @@ const FAMILY_PHOTO_WORDS =
   /ayana|zarmina|adnan|amy|girls|daughters|family|kids|we stayed|our airbnb|our lovely/i;
 
 function isColorThemeCaption(caption) {
-  return Boolean(parseColorFromCaption(caption));
+  return Boolean(parseColorFromCaption(caption) || parseThemeFromCaption(caption));
 }
 
 function postDay(item) {
