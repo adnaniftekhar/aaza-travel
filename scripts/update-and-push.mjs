@@ -146,10 +146,10 @@ async function main() {
       log(`WARNING: ${status.message}`);
       console.log("");
       console.log("==========================================");
-      console.log("  Instagram blocked collab/color scrape");
+      console.log("  Instagram blocked all collab scrapes");
       console.log("==========================================");
       console.log("Adnan posts may still have updated.");
-      console.log("For Amy color posts, use: add-instagram-post.command");
+      console.log("Cookie-free Chromium scrape also failed this run.");
       console.log("");
     }
   } catch {

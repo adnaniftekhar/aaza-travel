@@ -1,0 +1,24 @@
+{
+  "name": "aaza-website",
+  "version": "1.0.0",
+  "description": "A family travel blog built with plain HTML, CSS, and JavaScript. Instagram posts tagged with `#AAZATravels` (or `#AAZAParis`, `#AAZAScotland`, etc.) appear on the site automatically.",
+  "main": "index.js",
+  "scripts": {
+    "fetch:instagram": "node scripts/fetch-instagram.mjs",
+    "fetch:blog": "node scripts/fetch-blog.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adnaniftekhar/aaza-travel.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/adnaniftekhar/aaza-travel/issues"
+  },
+  "homepage": "https://github.com/adnaniftekhar/aaza-travel#readme",
+  "dependencies": {
+    "playwright": "^1.49.1"
+  }
+}

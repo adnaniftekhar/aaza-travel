@@ -132,24 +132,12 @@ Optional (if each account has its own token):
 
 #### Collab posts (Amy's posts on your profile)
 
-Instagram's official API **does not return collab posts** — only posts you authored yourself. The site works around this by reading your **public profile grid**, which includes collab posts.
+Instagram's official API **does not return collab posts** — only posts you authored yourself. The site works around this in two ways:
 
-GitHub's servers get blocked by Instagram unless you add `IG_SESSIONID` (a login cookie). Without it, your own posts still update via the API, and any collab posts already captured are kept. With it, **new collab posts are picked up automatically**.
+1. **Cookie-free Chromium scrape (preferred)** — GitHub Actions opens Adnan's **public** Instagram grid in headless Chrome. Amy's collab posts show up there as "Photo by Amy …" even when her own profile is private. No login cookie needed.
+2. **Optional `IG_SESSIONID`** — only needed if you want richer caption scraping from logged-in GraphQL. Not required for Amy posts to appear.
 
-**Get `IG_SESSIONID` (one-time, ~2 minutes on your Mac):**
-
-1. Open **Chrome** and go to [instagram.com](https://www.instagram.com) — log in as **Adnan**.
-2. Press **Cmd + Option + I** to open Developer Tools.
-3. Click the **Application** tab (top of the panel).
-4. In the left sidebar: **Cookies** → **https://www.instagram.com**.
-5. Find the row named **`sessionid`** and double-click the **Value** column.
-6. Copy the long string (starts with something like `7...`).
-7. In GitHub: repo → **Settings** → **Secrets** → **New repository secret**
-   - Name: `IG_SESSIONID`
-   - Value: paste what you copied
-8. Repo → **Actions** → **Update Instagram Feed** → **Run workflow** to test.
-
-The cookie expires every few months (like the API token). When collab posts stop updating, repeat steps 1–8 with a fresh cookie.
+Optional: connect Amy's Instagram Login token (`INSTAGRAM_USER_ID_AMY` + `INSTAGRAM_ACCESS_TOKEN_AMY`) so her authored posts also sync with full captions via the Graph API.
 
 ### Step 4 — Verify auto-updates
 

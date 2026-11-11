@@ -88,6 +88,25 @@ const INCLUDED_SHORTCODES = new Set([
   "DaVV6v2iN_8tUH4Xjf6vpwYHxpg_uu1rkXr5Ks0", // Amy: "First stop in Paris, a corner bakery..."
 ]);
 
+// When the cookie-free browser scrape cannot read captions (Amy's account is
+// private), use these hand-checked labels so Colors/Themes still work.
+const CAPTION_HINTS = {
+  DfjGprAuuIg: "STREET ART: Pet murals and street art. #AAZATravels",
+  DfeplbVh3rp: "STREET ART: Murals seen around town. #AAZATravels",
+  DfZDF1gO2oA: "RED: Seen around town. #AAZATravels",
+  DfZA0MahpDa: "PURPLE: Gardens, crafts, and shops. #AAZATravels",
+  DfZAmCGmhBB: "Georgia: Sighnaghi\n#AAZATravels",
+};
+
+function captionHintFor(id) {
+  if (!id) return "";
+  if (CAPTION_HINTS[id]) return CAPTION_HINTS[id];
+  for (const [prefix, caption] of Object.entries(CAPTION_HINTS)) {
+    if (id.startsWith(prefix)) return caption;
+  }
+  return "";
+}
+
 async function cacheImage(url, id) {
   if (!url || url.includes(".mp4")) return "";
 
@@ -270,7 +289,127 @@ async function fetchPublicProfilePosts(account) {
   const graphql = await fetchGraphqlProfilePosts(account);
   if (graphql.ok) return graphql;
 
+  // Last resort that does NOT need IG_SESSIONID: render the public profile in
+  // headless Chromium. Collab posts show as "Photo by Amy ..." in image alts.
+  const browser = await fetchPublicProfileBrowserPosts(account);
+  if (browser.ok) return browser;
+
   return { posts: [], ok: false };
+}
+
+function parseAltDate(alt) {
+  const m = /on ([A-Za-z]+ \d{1,2}, \d{4})/.exec(alt || "");
+  if (!m) return "";
+  const d = new Date(m[1] + " UTC");
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+// Public grid HTML (no login): Amy collabs appear on Adnan's profile with
+// "Photo by Amy Iftekhar" alts. Captions are not available without login, so we
+// keep a seed hashtag so they still appear on the site.
+async function fetchPublicProfileBrowserPosts(account) {
+  let chromium;
+  try {
+    ({ chromium } = await import("playwright"));
+  } catch {
+    console.log(
+      `${account.name}: Playwright not installed — run npm install to enable cookie-free collab scrape`,
+    );
+    return { posts: [], ok: false };
+  }
+
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 1800 },
+    });
+    await page.goto(`https://www.instagram.com/${account.username}/`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    await page.waitForTimeout(5000);
+
+    // Load a couple extra rows when Instagram offers them.
+    for (let i = 0; i < 2; i++) {
+      const more = page.getByRole("button", {
+        name: /Show more posts from/i,
+      });
+      if (await more.count()) {
+        try {
+          await more.first().click({ timeout: 2000 });
+          await page.waitForTimeout(2500);
+        } catch {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    const raw = await page.evaluate(() => {
+      const out = [];
+      const seen = new Set();
+      for (const a of document.querySelectorAll(
+        'a[href*="/p/"], a[href*="/reel/"]',
+      )) {
+        const m = a.href.match(/\/(p|reel)\/([^/?#]+)/);
+        if (!m || seen.has(m[2])) continue;
+        seen.add(m[2]);
+        const img = a.querySelector("img");
+        const alt = img?.alt || "";
+        out.push({
+          id: m[2],
+          type: m[1],
+          alt,
+          byAmy: /Photo by Amy|Video by Amy/i.test(alt),
+          src: img?.currentSrc || img?.src || "",
+          href: a.href.split("?")[0],
+        });
+      }
+      return out;
+    });
+
+    // Adnan's own posts still come from Graph API. This path is specifically
+    // for Amy collab posts that the API refuses to return.
+    const amyItems = raw.filter((item) => item.byAmy && item.id);
+    const posts = [];
+    for (const item of amyItems) {
+      if (EXCLUDED_IDS.has(item.id)) continue;
+      const localImage = await cacheImage(item.src, item.id);
+      const permalink =
+        item.type === "reel"
+          ? `https://www.instagram.com/reel/${item.id}/`
+          : `https://www.instagram.com/p/${item.id}/`;
+      posts.push({
+        id: item.id,
+        author: "Amy",
+        // Prefer a known Colors/Themes label; otherwise seed #AAZATravels so the
+        // post stays on the site. Real captions can overwrite later.
+        caption: captionHintFor(item.id) || "#AAZATravels",
+        image: localImage || item.src,
+        mediaType: item.type === "reel" ? "VIDEO" : "IMAGE",
+        permalink,
+        date: parseAltDate(item.alt) || new Date().toISOString(),
+        collab: true,
+        source: "public-browser",
+      });
+    }
+
+    console.log(
+      `${account.name}: browser public grid found ${amyItems.length} Amy collab posts`,
+    );
+    return { posts, ok: posts.length > 0 || amyItems.length === 0 };
+  } catch (err) {
+    console.log(
+      `${account.name}: browser public grid failed (${err.message})`,
+    );
+    return { posts: [], ok: false };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
 }
 
 function igWebHeaders(account, extra = {}) {
@@ -490,9 +629,17 @@ function upsertArchive(byId, post) {
 
   const prev = byId.get(post.id);
   if (prev) {
+    // Browser scrape only gets a seed caption. Never wipe a real caption we
+    // already stored from Graph API / manual add / an earlier richer scrape.
+    const keepPrevCaption =
+      post.source === "public-browser" &&
+      prev.caption &&
+      prev.caption.trim() &&
+      prev.caption.trim() !== "#AAZATravels";
     byId.set(post.id, {
       ...prev,
       ...post,
+      caption: keepPrevCaption ? prev.caption : post.caption || prev.caption,
       collab: post.collab ?? prev.collab,
     });
   } else {
@@ -635,8 +782,8 @@ async function main() {
         scrapeFailed,
         at: new Date().toISOString(),
         message: scrapeFailed
-          ? "Instagram blocked the public profile scrape. Adnan's own posts may still update via the API, but Amy collab / color posts need add-instagram-post.command until the scrape works again."
-          : "Public profile scrape succeeded.",
+          ? "Instagram blocked API/GraphQL scrapes. Cookie-free Chromium fallback also failed — Amy collab posts may be missing."
+          : "Public profile scrape succeeded (API, GraphQL, or cookie-free Chromium).",
       },
       null,
       2,
@@ -648,8 +795,12 @@ async function main() {
     // commit Graph API updates. A hard exit was turning every 2-hour run red
     // and blocking those commits.
     console.warn("");
-    console.warn("WARNING: Instagram blocked the public profile scrape (collab/color posts may be missing).");
-    console.warn("Adnan's Graph API posts were still saved. Use add-instagram-post.command for Amy's color posts if needed.");
+    console.warn(
+      "WARNING: All public-profile scrapes failed (including cookie-free Chromium).",
+    );
+    console.warn(
+      "Adnan's Graph API posts were still saved. Amy collab posts may be missing until the next successful browser scrape.",
+    );
     console.warn("");
   }
 }
