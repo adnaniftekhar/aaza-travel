@@ -25,7 +25,7 @@ echo ""
 
 # First run (or after a pull) needs Playwright Chromium once.
 if [ -f package.json ]; then
-  "$NODE_BIN" -e "require('playwright')" 2>/dev/null || "$NODE_BIN" npm --prefix . install
+  "$NODE_BIN" -e "require('playwright')" 2>/dev/null || npm --prefix . install
   npx --yes playwright install chromium >/dev/null 2>&1 || true
 fi
 

@@ -18,7 +18,7 @@ mkdir -p "$REPO/logs"
 # Cookie-free Amy collab scrape needs Playwright Chromium once.
 if [ -f "$REPO/package.json" ]; then
   echo "Installing Playwright (needed for Amy's collab posts)..."
-  (cd "$REPO" && "$NODE_BIN" npm install && npx playwright install chromium) || true
+  (cd "$REPO" && npm install && npx playwright install chromium) || true
 fi
 
 cat > "$PLIST" << EOF
