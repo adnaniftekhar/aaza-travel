@@ -330,7 +330,18 @@ async function fetchPublicProfileBrowserPosts(account) {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    await page.waitForTimeout(5000);
+
+    // Instagram serves an empty shell first; wait for real grid thumbnails.
+    try {
+      await page.waitForSelector('a[href*="/p/"] img, a[href*="/reel/"] img', {
+        timeout: 25000,
+      });
+    } catch {
+      console.log(
+        `${account.name}: browser public grid timed out waiting for thumbnails (often blocked on cloud IPs)`,
+      );
+    }
+    await page.waitForTimeout(4000);
 
     // Load a couple extra rows when Instagram offers them.
     for (let i = 0; i < 2; i++) {
@@ -399,9 +410,11 @@ async function fetchPublicProfileBrowserPosts(account) {
     }
 
     console.log(
-      `${account.name}: browser public grid found ${amyItems.length} Amy collab posts`,
+      `${account.name}: browser public grid found ${raw.length} grid items, ${amyItems.length} Amy collab posts`,
     );
-    return { posts, ok: posts.length > 0 || amyItems.length === 0 };
+    // ok only if Instagram actually rendered a grid. Empty shell (common on
+    // GitHub Actions IPs) must count as a failed scrape.
+    return { posts, ok: raw.length > 0 };
   } catch (err) {
     console.log(
       `${account.name}: browser public grid failed (${err.message})`,

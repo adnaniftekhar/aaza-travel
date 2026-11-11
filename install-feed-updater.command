@@ -15,6 +15,12 @@ fi
 
 mkdir -p "$REPO/logs"
 
+# Cookie-free Amy collab scrape needs Playwright Chromium once.
+if [ -f "$REPO/package.json" ]; then
+  echo "Installing Playwright (needed for Amy's collab posts)..."
+  (cd "$REPO" && "$NODE_BIN" npm install && npx playwright install chromium) || true
+fi
+
 cat > "$PLIST" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
